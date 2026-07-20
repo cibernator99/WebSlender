@@ -657,15 +657,49 @@
   //  El foco con penumbra ya crea el charco de luz suave de la referencia.)
   let flashBeam=null;
 
-  // Motas de polvo flotando (se revelan dentro del haz de la linterna)
-  let dust=null; const DUST_N=150; const dustBase=[];
+  // Motas de polvo: SOLO se encienden dentro del haz de la linterna (shader propio;
+  // los Points normales no reaccionan a la luz). Cada mota mira si cae en el cono.
+  let dust=null, dustMat=null; const DUST_N=150; const dustBase=[];
   (function(){
-    const pos=new Float32Array(DUST_N*3);
+    const pos=new Float32Array(DUST_N*3), seed=new Float32Array(DUST_N);
     for(let i=0;i<DUST_N;i++){ const x=(Math.random()-0.5)*22, y=Math.random()*5.5, z=(Math.random()-0.5)*22;
-      dustBase.push([x,y,z]); pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z; }
-    const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos,3));
-    dust=new THREE.Points(g, new THREE.PointsMaterial({ color:0xaab0b8, size:0.05,
-      transparent:true, opacity:0.45, depthWrite:false }));
+      dustBase.push([x,y,z]); pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z; seed[i]=Math.random(); }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    g.setAttribute('seed', new THREE.BufferAttribute(seed,1));
+    dustMat=new THREE.ShaderMaterial({
+      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+      uniforms:{
+        uTorchPos:{value:new THREE.Vector3()}, uTorchDir:{value:new THREE.Vector3(0,0,-1)},
+        uTorchOn:{value:0}, uConeCos:{value:Math.cos(0.55)}, uRange:{value:16.0}, uSize:{value:12.0}
+      },
+      vertexShader:
+        "uniform vec3 uTorchPos; uniform vec3 uTorchDir; uniform float uTorchOn;\n"+
+        "uniform float uConeCos; uniform float uRange; uniform float uSize;\n"+
+        "attribute float seed; varying float vBright;\n"+
+        "void main(){\n"+
+        "  vec4 wp = modelMatrix * vec4(position,1.0);\n"+
+        "  vec3 to = wp.xyz - uTorchPos; float d = length(to);\n"+
+        "  vec3 dir = to / max(d,0.0001);\n"+
+        "  float cone = smoothstep(uConeCos, mix(uConeCos,1.0,0.45), dot(dir,uTorchDir));\n"+
+        "  float atten = clamp(1.0 - d/uRange, 0.0, 1.0);\n"+
+        "  vBright = uTorchOn * cone * atten * atten;\n"+
+        "  vec4 mv = viewMatrix * wp;\n"+
+        "  gl_Position = projectionMatrix * mv;\n"+
+        "  gl_PointSize = clamp(uSize/max(-mv.z,1.0) * (0.7+seed*0.6), 1.0, 7.0);\n"+
+        "}",
+      fragmentShader:
+        "varying float vBright;\n"+
+        "void main(){\n"+
+        "  if (vBright <= 0.003) discard;\n"+
+        "  vec2 c = gl_PointCoord - vec2(0.5); float r = length(c);\n"+
+        "  if (r > 0.5) discard;\n"+
+        "  float soft = 1.0 - smoothstep(0.1, 0.5, r);\n"+
+        "  gl_FragColor = vec4(vec3(0.85,0.87,0.92), vBright * soft * 0.85);\n"+
+        "}"
+    });
+    dust=new THREE.Points(g, dustMat);
+    dust.frustumCulled=false;
     scene.add(dust);
   })();
 
@@ -1247,6 +1281,10 @@
           camera.position.z + b[2] + Math.cos(elapsed*0.24+i)*0.6);
       }
       p.needsUpdate=true;
+      // pasa el cono de la linterna al shader del polvo (solo brilla dentro del haz)
+      camera.getWorldPosition(dustMat.uniforms.uTorchPos.value);
+      camera.getWorldDirection(dustMat.uniforms.uTorchDir.value);
+      dustMat.uniforms.uTorchOn.value = Math.min(1, torch.intensity/2.4);
     }
     // Slender vivo: balanceo de brazos, cabeza ladeada, tentáculos por estrés
     if (slender.position.y > -10){
