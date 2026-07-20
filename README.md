@@ -25,12 +25,13 @@ Esc	Pause
 🎞️ Post-processing effects (bloom, TV/VHS static overlay)
 🪵 PBR textures (bark, brick, ground, metal, rock, rust, wood) with color/normal/roughness maps
 📄 Classic 8-pages objective and escalating tension
-🌐 Runs 100% in the browser — no install required
+🌐 Runs 100% in the browser — only requires python installed to load the assets
 🚀 How to Play
 The game needs to be served over a local web server (loading index.html directly won't load the assets correctly).
 
 Easiest way (Windows)
 Double-click run.bat. It starts a local server and opens the game in your browser automatically.
+Note: Smart control from Windows could block the run.bat, so if this happens, just edit the .bat file, copy the content, and then create a new .bat file and run from it.
 
 Requires Python installed. Keep the server window open while playing; close it to stop.
 
