@@ -45,27 +45,44 @@ Looking directly at the Slender Man slows his approach… but drains your sanity
 
 ## How to Play
 
-Due to the way modern browsers handle local file access,
-the game cannot be run directly from the file system like `file://index.html`.
-Instead the game needs to be served over a local web server.
+### Local Play
 
-Easiest way (Windows)
-Double-click run.bat. It starts a local server and opens the game in your browser automatically.
-Note: Smart control from Windows could block the run.bat, so if this happens, just edit the .bat file, copy the content, and then create a new .bat file and run from it.
+Modern browsers block local file access (`file://index.html`),
+so the game needs to be served over a local web server.
+Two launcher scripts are included to make this a one-step process.
 
-Easiest way (Linux / macOS)
-Run ./run.sh from the project folder. It starts a local server and opens the game in your default browser.
+**Requirements:** Python must be installed. Both scripts pick a free port automatically (starting at 8000).
+Keep the server window/terminal open while playing — closing it stops the server.
 
-Both scripts require Python installed and pick a free port automatically (starting at 8000). Keep the server window/terminal open while playing; close it to stop.
+#### Windows
 
-Manual way (any OS)
-From the project folder, run:
+Double-click `run.bat`. It starts a local server and opens the game in your browser automatically.
 
+> [!TIP]
+> If Windows SmartScreen blocks `run.bat`, open it in a text editor, copy the contents into a new `.bat` file, and run that instead.
+> Alternatively, run python http server yourself (see below).
+
+#### Linux / macOS
+
+```sh
+./run.sh
+```
+
+This starts a local server and opens the game in your default browser.
+
+#### Manual (any OS)
+
+If you'd rather skip the scripts, serve the folder yourself:
+
+```sh
 python -m http.server 8000
-Then open <http://localhost:8000/index.html> in your browser.
+```
+
+Then open [http://localhost:8000/index.html](http://localhost:8000/index.html) in your browser.
 
 ## Project Structure
 
+```plaintext
 WebSlender/
 ├── index.html        # Game entry point (HTML/CSS/JS)
 ├── three.min.js      # Three.js engine
@@ -74,12 +91,14 @@ WebSlender/
 ├── run.bat           # Local server launcher (Windows)
 ├── run.sh            # Local server launcher (Linux / macOS)
 └── LICENSE           # Full licensing terms
+```
 
 ## Credits
 
-Original game: Slender: The Eight Pages by Mark Hadley (Parsec Productions)
-Web remake (WebSlender): fan project by cibernator and the community who wants to help with it
-Engine: Three.js
+* Original game: Slender: The Eight Pages by Mark Hadley (Parsec Productions)
+* Web remake (WebSlender): fan project by cibernator and the community who wants to help with it
+* Engine: Three.js
+
 This project is completely free and open for anyone who wants to play, learn from, or support it. If you enjoy it, please support the original creator first. 💛
 
 ## License / Disclaimer
