@@ -174,7 +174,7 @@
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const FOGCOL = new THREE.Color(0x070a11);            // niebla nocturna casi negra (el lejos se funde a oscuro)
+  const FOGCOL = new THREE.Color(0x020308);            // niebla nocturna casi negra (el lejos se funde a oscuro)
   scene.fog = new THREE.FogExp2(FOGCOL.getHex(), G.fogDensity);
 
   const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 900);
@@ -191,16 +191,16 @@
     const c=document.createElement('canvas'); c.width=1024; c.height=512;
     const x=c.getContext('2d');
     const g=x.createLinearGradient(0,0,0,512);
-    g.addColorStop(0.00,'#070d18'); g.addColorStop(0.45,'#0c1524');
-    g.addColorStop(0.72,'#141f30'); g.addColorStop(1.00,'#1b2a3c');
+    g.addColorStop(0.00,'#010207'); g.addColorStop(0.45,'#02040b');
+    g.addColorStop(0.72,'#04060f'); g.addColorStop(1.00,'#070a14');
     x.fillStyle=g; x.fillRect(0,0,1024,512);
     // nubes difusas pintadas en la cúpula (más densas hacia el horizonte)
     for(let i=0;i<170;i++){
       const cx=Math.random()*1024, cy=140+Math.random()*300;
       const rr=40+Math.random()*130;
-      const a=0.03+Math.random()*0.10;
+      const a=0.02+Math.random()*0.05;
       const gr=x.createRadialGradient(cx,cy,0,cx,cy,rr);
-      const tone=30+Math.random()*35;
+      const tone=12+Math.random()*14;
       gr.addColorStop(0,'rgba('+(tone)+','+(tone+8)+','+(tone+20)+','+a+')');
       gr.addColorStop(1,'rgba('+(tone)+','+(tone+8)+','+(tone+20)+',0)');
       x.fillStyle=gr; x.beginPath(); x.arc(cx,cy,rr,0,7); x.fill();
@@ -219,7 +219,7 @@
     }
     const g=new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-    scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0x9fb0c8, size:1.5, sizeAttenuation:false, fog:false, transparent:true, opacity:0.75})));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0x9fb0c8, size:1.5, sizeAttenuation:false, fog:false, transparent:true, opacity:0.4})));
   })();
 
   // --- Luna bonita (disco con mares + halo suave) ---
@@ -241,7 +241,7 @@
     // halo
     const hc=document.createElement('canvas'); hc.width=hc.height=256;
     const hx=hc.getContext('2d'); const hg=hx.createRadialGradient(128,128,20,128,128,128);
-    hg.addColorStop(0,'rgba(210,224,255,0.5)'); hg.addColorStop(0.35,'rgba(170,190,235,0.22)');
+    hg.addColorStop(0,'rgba(200,215,245,0.30)'); hg.addColorStop(0.35,'rgba(160,180,225,0.13)');
     hg.addColorStop(1,'rgba(150,175,220,0)');
     hx.fillStyle=hg; hx.fillRect(0,0,256,256);
     const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(hc),
@@ -255,12 +255,12 @@
     const x=c.getContext('2d');
     for(let i=0;i<26;i++){ const cx=40+Math.random()*176, cy=40+Math.random()*48, rr=24+Math.random()*44;
       const gr=x.createRadialGradient(cx,cy,0,cx,cy,rr);
-      gr.addColorStop(0,'rgba(60,70,90,0.5)'); gr.addColorStop(1,'rgba(60,70,90,0)');
+      gr.addColorStop(0,'rgba(34,40,52,0.5)'); gr.addColorStop(1,'rgba(34,40,52,0)');
       x.fillStyle=gr; x.beginPath(); x.arc(cx,cy,rr,0,7); x.fill(); }
     const ct=new THREE.CanvasTexture(c);
     for(let i=0;i<9;i++){
       const s=new THREE.Sprite(new THREE.SpriteMaterial({map:ct, fog:false, depthWrite:false,
-        transparent:true, opacity:0.35+Math.random()*0.3}));
+        transparent:true, opacity:0.12+Math.random()*0.13}));
       const sc=90+Math.random()*130; s.scale.set(sc,sc*0.5,1);
       s.position.set((Math.random()*2-1)*380, 120+Math.random()*90, (Math.random()*2-1)*380);
       scene.add(s); clouds.push({s, speed:2+Math.random()*4});
@@ -268,28 +268,28 @@
   })();
 
   // --- Iluminación: noche cerrada. Sin linterna apenas ves nada (como el original) ---
-  const hemi = new THREE.HemisphereLight(0x2f3a4d, 0x080b08, 0.10);
+  const hemi = new THREE.HemisphereLight(0x2f3a4d, 0x0a0e14, 0.035);
   scene.add(hemi);
-  const moon = new THREE.DirectionalLight(0x7f95bc, 0.12);   // borde tenue de luna en los árboles
+  const moon = new THREE.DirectionalLight(0x7f95bc, 0.05);   // borde tenue de luna en los árboles
   moon.position.copy(MOON_POS);
   scene.add(moon);
-  const amb = new THREE.AmbientLight(0x0a0e18, 0.04);
+  const amb = new THREE.AmbientLight(0x0a0e18, 0.02);
   scene.add(amb);
   const sun = new THREE.DirectionalLight(0xfff2d8, 0);       // apagado hasta el amanecer del final
   sun.position.set(70,120,40);
   scene.add(sun);
 
   // Linterna: foco enganchado a la cámara. Penumbra alta = charco de luz suave (como la foto)
-  const torch = new THREE.SpotLight(0xffe7bd, 0, 60, 0.50, 0.7, 1.4);
+  const torch = new THREE.SpotLight(0xffe7bd, 0, 50, 0.48, 0.85, 1.6);
   torch.position.set(0.2,-0.1,0.2);
   torch.castShadow = true;
   torch.shadow.mapSize.set(1024,1024);
   torch.shadow.camera.near = 0.5;
-  torch.shadow.camera.far = 58;
+  torch.shadow.camera.far = 48;
   torch.shadow.bias = -0.0007;
   camera.add(torch);
   camera.add(torch.target);
-  torch.target.position.set(0,-0.05,-1);
+  torch.target.position.set(0,-0.08,-1);
 
   // ===================== Materiales PBR reales (texturas CC0 de ambientCG) =====================
   const texLoader = new THREE.TextureLoader();
@@ -635,7 +635,7 @@
     hx.fillStyle=hg; hx.fillRect(0,0,64,64);
     flashHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map:new THREE.CanvasTexture(hc),
       transparent:true, blending:THREE.AdditiveBlending, depthTest:false, opacity:0 }));
-    flashHalo.scale.set(0.14,0.14,1); flashHalo.position.set(0,0,-0.22); flashModel.add(flashHalo);
+    flashHalo.scale.set(0.085,0.085,1); flashHalo.position.set(0,0,-0.22); flashModel.add(flashHalo);
 
     flashModel.position.copy(FLASH_BASE);
     flashModel.rotation.set(-0.05, -0.10, 0.03);
@@ -1005,7 +1005,7 @@
       if (G.battery <= 0.05){ G.battery=0; G.torchOn=false; }
       if (G.battery < 0.25 && Math.random()<0.2) G.torchdying=!G.torchdying;
     } else G.torchdying=false;
-    const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*4.2 : G.battery*4.2) : 0;
+    const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*3.2 : G.battery*3.2) : 0;
     torch.intensity += (targetIntensity - torch.intensity)*0.5;
     elBatteryFill.style.transform = 'scaleX('+Math.max(0,G.battery)+')';
     elBatteryFill.style.background = G.battery<0.25 ? '#c33' : '#c9c9c9';
@@ -1069,14 +1069,16 @@
 
     // Modelo de linterna: balanceo al caminar + brillo de la lente
     if (flashModel){
-      const spd = G.moving ? (keys['shift']?0.42:0.30) : 0.05;
+      // Bob realista: caminando poco balanceo; corriendo más amplio pero lento (vaivén pesado)
+      const running = G.moving && keys['shift'];
+      const spd = running ? 0.12 : (G.moving ? 0.13 : 0.05);   // más lento en general; corriendo = vaivén lento
       G.bob += spd;
-      const amp = G.moving ? 1 : 0.2;
+      const amp = running ? 1.8 : (G.moving ? 0.5 : 0.18);      // corriendo = amplio; caminando = sutil
       flashModel.position.x = FLASH_BASE.x + Math.cos(G.bob)*0.010*amp;
       flashModel.position.y = FLASH_BASE.y + Math.abs(Math.sin(G.bob))*0.016*amp - 0.004*amp;
       const on = G.torchOn && torch.intensity>0.05;
       flashLens.material.color.setHex(on ? (G.torchdying?0x7a5a24:0xffe6b0) : 0x140f07);
-      flashHalo.material.opacity = on ? (G.torchdying?0.25:0.6) : 0;
+      flashHalo.material.opacity = on ? (G.torchdying?0.15:0.32) : 0;
       if (flashBeam){ flashBeam.visible = on;
         flashBeam.material.opacity = on ? (G.torchdying?0.06:0.12) : 0; }
     }
