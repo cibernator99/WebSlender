@@ -35,6 +35,16 @@
     color:#eaeaea; font-size:16px; letter-spacing:1px; text-shadow:0 0 6px #000; opacity:0;
     transition:opacity .2s; }
 
+  /* Contador de FPS (opcional, se activa desde el menú) */
+  #fps { position:fixed; left:12px; top:10px; z-index:9; color:#8fe08f;
+    font-size:13px; letter-spacing:1px; text-shadow:0 0 5px #000;
+    display:none; pointer-events:none; }
+
+  /* Opción con casilla en las pantallas (p. ej. "Mostrar FPS") */
+  .screen .opt { margin-top:22px; color:#9a9a9a; font-size:14px; letter-spacing:1px;
+    display:inline-flex; align-items:center; gap:9px; cursor:pointer; user-select:none; }
+  .screen .opt input { width:16px; height:16px; accent-color:#c9c9c9; cursor:pointer; }
+
   /* Pantallas */
   .screen { position:absolute; inset:0; background:#000; display:flex; flex-direction:column;
     align-items:center; justify-content:center; text-align:center; pointer-events:auto;
@@ -62,6 +72,7 @@
   <div class="fadeblack" id="fadeblack"></div>
 
   <div id="crosshair"></div>
+  <div id="fps">-- FPS</div>
   <div id="pages">Recoge las 8 páginas</div>
   <div id="battery"><i id="batteryFill"></i></div>
   <div id="hint">Clic izquierdo para recoger la página</div>
@@ -78,6 +89,7 @@
         <b>Shift</b> — correr &nbsp;·&nbsp; <b>F</b> o <b>clic derecho</b> — linterna<br>
         <b>Clic izquierdo</b> — recoger página &nbsp;·&nbsp; <b>Esc</b> — pausa
       </div>
+      <label class="opt" id="fpsToggle"><input type="checkbox" id="fpsCheck"> Mostrar FPS</label>
       <div class="go" id="startBtn">CLIC PARA EMPEZAR</div>
       <div class="small">Recreación técnica del open source · Three.js · audio sintetizado en tiempo real</div>
     </div>
@@ -85,6 +97,7 @@
     <div class="screen" id="pauseScreen">
       <h1 style="font-size:44px">PAUSA</h1>
       <p>Clic para continuar &nbsp;·&nbsp; <b>Esc</b> otra vez para reanudar</p>
+      <div class="go" id="pauseRestartBtn">REINICIAR</div>
     </div>
 
     <div class="screen" id="endScreen">
@@ -147,7 +160,7 @@
 
   // ===================== Three.js: escena básica =====================
   const container = document.getElementById('game');
-  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
@@ -931,6 +944,19 @@
   const elPages = document.getElementById('pages');
   const elBattery = document.getElementById('battery');
   const elBatteryFill = document.getElementById('batteryFill');
+
+  // ---- Contador de FPS (opcional) ----
+  const elFps = document.getElementById('fps');
+  let showFps = false, fpsFrames = 0, fpsLastT = 0;
+  const fpsCheck = document.getElementById('fpsCheck');
+  const fpsToggle = document.getElementById('fpsToggle');
+  // clic en la casilla NO debe arrancar la partida (el menú entero es clicable)
+  if (fpsToggle) fpsToggle.addEventListener('click', e=> e.stopPropagation());
+  if (fpsCheck) fpsCheck.addEventListener('change', e=>{
+    showFps = e.target.checked;
+    elFps.style.display = showFps ? 'block' : 'none';
+    fpsFrames = 0; fpsLastT = 0; elFps.textContent = '-- FPS';
+  });
   function showPages(){
     elPages.textContent = G.pages===0 ? 'Recoge las 8 páginas' : ('Páginas '+G.pages+'/8');
     elPages.style.opacity='1';
@@ -1184,6 +1210,8 @@
   document.getElementById('startScreen').addEventListener('click', startGame);
   document.getElementById('pauseScreen').addEventListener('click', resume);
   document.getElementById('restartBtn').addEventListener('click', ()=> location.reload());
+  // Botón REINICIAR en la pausa (stopPropagation: no debe reanudar al hacer clic)
+  document.getElementById('pauseRestartBtn').addEventListener('click', e=>{ e.stopPropagation(); location.reload(); });
 
   document.addEventListener('pointerlockchange', ()=>{
     if (document.pointerLockElement==null && G.state==='play'){ pause(); }
@@ -1241,6 +1269,16 @@
   function loop(){
     requestAnimationFrame(loop);
     const dt = Math.min(clock.getDelta(), 0.05);
+    // FPS reales (independiente del dt recortado de la simulación)
+    if (showFps){
+      fpsFrames++;
+      const now = performance.now();
+      if (fpsLastT===0){ fpsLastT=now; }
+      else if (now-fpsLastT>=500){
+        elFps.textContent = Math.round(fpsFrames*1000/(now-fpsLastT)) + ' FPS';
+        fpsFrames=0; fpsLastT=now;
+      }
+    }
     if (G.state==='play'){
       acc += dt;
       let steps=0;
