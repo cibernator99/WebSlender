@@ -340,13 +340,13 @@
   const foliageMd = new THREE.InstancedMesh(foliageMdGeo, foliageMat, NUM_TREES);
   const foliageHi = new THREE.InstancedMesh(foliageHiGeo, foliageMat, NUM_TREES);
   // los árboles NO proyectan sombra (para poder tener cientos); sí la reciben
-  [trunks, foliageLo, foliageMd, foliageHi].forEach(m=>{ m.castShadow=false; m.receiveShadow=true; scene.add(m); });
+  [trunks, foliageLo, foliageMd, foliageHi].forEach(m=>{ m.castShadow=false; m.receiveShadow=false; scene.add(m); });
 
   // --- Arbustos / maleza (instanciado, decorativo) ---
   const bushGeo = new THREE.IcosahedronGeometry(1, 0);
   const bushMat = new THREE.MeshLambertMaterial({ color:0xffffff });
   const bushes = new THREE.InstancedMesh(bushGeo, bushMat, NUM_BUSHES);
-  bushes.castShadow=false; bushes.receiveShadow=true; scene.add(bushes);
+  bushes.castShadow=false; bushes.receiveShadow=false; scene.add(bushes);
 
   // ===================== Estructuras "landmark" (como el original) =====================
   // Guardamos también un punto de anclaje para una página.
@@ -1237,6 +1237,7 @@
     document.getElementById('crosshair').style.display='block';
     elBattery.style.display='block';
     camera.position.set(0, EYE, 0);
+    G.curX=0; G.curZ=0; G.prvX=0; G.prvZ=0;   // estado para interpolar el render
     G.torchOn = true;                 // arranca con la linterna encendida
     G.state='play';
     renderer.domElement.requestPointerLock();
@@ -1332,9 +1333,20 @@
       }
     }
     if (G.state==='play'){
+      // restaura la posición "real" (de simulación) antes de volver a simular
+      camera.position.x = G.curX; camera.position.z = G.curZ;
       acc += dt;
       let steps=0;
-      while (acc>=TICK && steps<4){ tick(); acc-=TICK; steps++; }
+      while (acc>=TICK && steps<4){
+        G.prvX = G.curX; G.prvZ = G.curZ;
+        tick();                                        // simula y escribe camera.position
+        G.curX = camera.position.x; G.curZ = camera.position.z;
+        acc-=TICK; steps++;
+      }
+      // render en posición interpolada -> movimiento fluido de verdad a cualquier FPS
+      const a = Math.min(1, acc/TICK);
+      camera.position.x = G.prvX + (G.curX - G.prvX)*a;
+      camera.position.z = G.prvZ + (G.curZ - G.prvZ)*a;
     }
     updateVisual(dt);
     renderStatic();
