@@ -1,0 +1,1262 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Slender: The Eight Pages — Web</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#000; color:#ccc;
+    font-family:"Courier New",monospace; cursor:default; }
+  #game { position:fixed; inset:0; z-index:1; }
+  #game canvas { display:block; width:100%; height:100%; }
+
+  /* Estática tipo TV (VHS) sobre el render */
+  #staticCanvas { position:fixed; inset:0; z-index:2; width:100%; height:100%;
+    image-rendering:pixelated; opacity:0; pointer-events:none; mix-blend-mode:screen; }
+
+  /* Viñeta: los "tentáculos" cerrándose cuando cae la cordura */
+  #vignette { position:fixed; inset:0; z-index:3; pointer-events:none; opacity:0;
+    background:radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(0,0,0,0.55) 62%, rgba(0,0,0,0.97) 100%); }
+
+  #ui { position:fixed; inset:0; z-index:5; pointer-events:none;
+    display:flex; align-items:center; justify-content:center; }
+
+  /* HUD */
+  #crosshair { position:fixed; left:50%; top:50%; width:5px; height:5px; margin:-2.5px 0 0 -2.5px;
+    border-radius:50%; background:rgba(230,230,230,.55); z-index:6; display:none; }
+  #pages { position:fixed; left:0; right:0; top:46%; text-align:center; z-index:6;
+    font-size:30px; letter-spacing:3px; color:#e8e8e8; text-shadow:0 0 8px #000; opacity:0;
+    transition:opacity .6s; }
+  #battery { position:fixed; right:22px; bottom:20px; z-index:6; width:120px; height:16px;
+    border:2px solid #888; display:none; }
+  #battery > i { display:block; height:100%; width:100%; background:#c9c9c9; transform-origin:left; }
+  #hint { position:fixed; left:0; right:0; bottom:64px; text-align:center; z-index:6;
+    color:#eaeaea; font-size:16px; letter-spacing:1px; text-shadow:0 0 6px #000; opacity:0;
+    transition:opacity .2s; }
+
+  /* Pantallas */
+  .screen { position:absolute; inset:0; background:#000; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; pointer-events:auto;
+    padding:24px; z-index:8; }
+  .screen h1 { font-size:64px; letter-spacing:10px; color:#f2f2f2; font-weight:normal;
+    text-shadow:0 0 20px rgba(255,255,255,.15); }
+  .screen h2 { font-size:16px; letter-spacing:4px; color:#8a8a8a; margin-top:6px; }
+  .screen p  { max-width:560px; margin-top:26px; line-height:1.9; color:#bdbdbd; font-size:15px; }
+  .screen .keys { margin-top:24px; color:#9a9a9a; font-size:14px; line-height:2.1; }
+  .screen .keys b { color:#e6e6e6; }
+  .screen .go { margin-top:34px; font-size:18px; letter-spacing:3px; color:#111;
+    background:#dcdcdc; padding:12px 30px; border-radius:2px; }
+  .screen .small { margin-top:30px; font-size:12px; color:#555; letter-spacing:1px; }
+  #endScreen { display:none; background:#000; }
+  #endScreen h1 { font-size:34px; letter-spacing:6px; }
+  #pauseScreen { display:none; background:rgba(0,0,0,.85); }
+  .fadeblack { position:absolute; inset:0; background:#000; z-index:7; opacity:0;
+    pointer-events:none; transition:opacity 1.2s; }
+</style>
+</head>
+<body>
+  <div id="game"></div>
+  <canvas id="staticCanvas"></canvas>
+  <div id="vignette"></div>
+  <div class="fadeblack" id="fadeblack"></div>
+
+  <div id="crosshair"></div>
+  <div id="pages">Recoge las 8 páginas</div>
+  <div id="battery"><i id="batteryFill"></i></div>
+  <div id="hint">Clic izquierdo para recoger la página</div>
+
+  <div id="ui">
+    <div class="screen" id="startScreen">
+      <h1>SLENDER</h1>
+      <h2>THE EIGHT PAGES · WEB</h2>
+      <p>Estás solo en el bosque de noche. Encuentra las <b>8 páginas</b> escondidas
+         entre los árboles y las estructuras. No estás solo.<br><br>
+         Cada página que recojas lo acerca más. <b>Si lo miras se acerca menos… pero pierdes la cordura.</b></p>
+      <div class="keys">
+        <b>WASD / Flechas</b> — moverse &nbsp;·&nbsp; <b>Ratón</b> — mirar<br>
+        <b>Shift</b> — correr &nbsp;·&nbsp; <b>F</b> o <b>clic derecho</b> — linterna<br>
+        <b>Clic izquierdo</b> — recoger página &nbsp;·&nbsp; <b>Esc</b> — pausa
+      </div>
+      <div class="go" id="startBtn">CLIC PARA EMPEZAR</div>
+      <div class="small">Recreación técnica del open source · Three.js · audio sintetizado en tiempo real</div>
+    </div>
+
+    <div class="screen" id="pauseScreen">
+      <h1 style="font-size:44px">PAUSA</h1>
+      <p>Clic para continuar &nbsp;·&nbsp; <b>Esc</b> otra vez para reanudar</p>
+    </div>
+
+    <div class="screen" id="endScreen">
+      <h1 id="endTitle">THE TAPE ENDS THERE.</h1>
+      <p id="endText"></p>
+      <div class="go" id="restartBtn">CLIC PARA REINTENTAR</div>
+    </div>
+  </div>
+
+  <script src="three.min.js"></script>
+  <!-- post-procesado (bloom) — ejemplos legacy de Three.js r128 -->
+  <script src="libs/CopyShader.js"></script>
+  <script src="libs/LuminosityHighPassShader.js"></script>
+  <script src="libs/GammaCorrectionShader.js"></script>
+  <script src="libs/EffectComposer.js"></script>
+  <script src="libs/ShaderPass.js"></script>
+  <script src="libs/MaskPass.js"></script>
+  <script src="libs/RenderPass.js"></script>
+  <script src="libs/UnrealBloomPass.js"></script>
+  <script>
+  (function(){
+  "use strict";
+  if (!window.THREE) { document.body.innerHTML =
+    '<div style="color:#ccc;font-family:monospace;padding:40px">No se pudo cargar three.min.js (debe estar junto a este archivo).</div>';
+    return; }
+
+  // ===================== Constantes (fieles al original, 50 Hz) =====================
+  const TICK = 1/50;            // Unity FixedUpdate corre a 50 Hz
+  const WORLD = 145;            // límite del mapa (original: 149)
+  const EYE = 1.7;
+  const PLAYER_R = 0.45;
+  const NUM_TREES = 1200;
+  const NUM_BUSHES = 480;
+
+  // ===================== Estado del juego =====================
+  const G = {
+    state: 'start',            // start | play | pause | ending
+    pages: 0, level: 0,
+    toolong: 12000,            // anti-camping: si tardas mucho sube el nivel
+    sanity: 100, stamina: 100, maxstam: 100,
+    scared: 0,                 // frames de "susto" tras verlo (corres más)
+    cansee: false, justsaw: false, drain: 0,
+    caught: false, lost: false, won: false,
+    maxrange: 100, minrange: 80,
+    // linterna
+    battery: 1, torchOn: false, torchdying: false,
+    // Slender
+    makejump: 0, mightport: 0, chasing: false, finaldelay: 0, maxdeviation: 4,
+    // varios
+    flicker: 0, stepcd: 120, laststep: 0, bob: 0, moving: false,
+    targetFog: 0.055, fogDensity: 0.055,
+    zoom: 60,
+    heartTimer: 0,
+    fadeoutgui: 400,
+    endTimer: 0,
+  };
+
+  const keys = {};
+  let mouseDown = false, rmbDown = false;
+
+  // ===================== Three.js: escena básica =====================
+  const container = document.getElementById('game');
+  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  container.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const FOGCOL = new THREE.Color(0x090d15);            // niebla nocturna muy oscura
+  scene.fog = new THREE.FogExp2(FOGCOL.getHex(), G.fogDensity);
+
+  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 900);
+  camera.rotation.order = 'YXZ';
+  scene.add(camera);
+
+  let elapsed = 0;                 // tiempo acumulado (para animaciones)
+  const clouds = [];               // nubes a la deriva
+  let skyDome = null;              // ref. para el cambio noche->día del final
+  const MOON_POS = new THREE.Vector3(-150, 175, 150);
+
+  // --- Cúpula de cielo nublado (degradado + bandas de nubes) ---
+  (function(){
+    const c=document.createElement('canvas'); c.width=1024; c.height=512;
+    const x=c.getContext('2d');
+    const g=x.createLinearGradient(0,0,0,512);
+    g.addColorStop(0.00,'#070d18'); g.addColorStop(0.45,'#0c1524');
+    g.addColorStop(0.72,'#141f30'); g.addColorStop(1.00,'#1b2a3c');
+    x.fillStyle=g; x.fillRect(0,0,1024,512);
+    // nubes difusas pintadas en la cúpula (más densas hacia el horizonte)
+    for(let i=0;i<170;i++){
+      const cx=Math.random()*1024, cy=140+Math.random()*300;
+      const rr=40+Math.random()*130;
+      const a=0.03+Math.random()*0.10;
+      const gr=x.createRadialGradient(cx,cy,0,cx,cy,rr);
+      const tone=30+Math.random()*35;
+      gr.addColorStop(0,'rgba('+(tone)+','+(tone+8)+','+(tone+20)+','+a+')');
+      gr.addColorStop(1,'rgba('+(tone)+','+(tone+8)+','+(tone+20)+',0)');
+      x.fillStyle=gr; x.beginPath(); x.arc(cx,cy,rr,0,7); x.fill();
+    }
+    const t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding;
+    const sky=new THREE.Mesh(new THREE.SphereGeometry(500,32,20),
+      new THREE.MeshBasicMaterial({map:t, side:THREE.BackSide, fog:false, depthWrite:false}));
+    sky.name='sky'; scene.add(sky); skyDome=sky;
+  })();
+
+  // --- Estrellas (tenues, algo tapadas por nubes) ---
+  (function(){
+    const pos=[]; for(let i=0;i<450;i++){
+      const th=Math.random()*Math.PI*2, ph=Math.random()*0.42*Math.PI, r=470;
+      pos.push(Math.sin(ph)*Math.cos(th)*r, Math.cos(ph)*r, Math.sin(ph)*Math.sin(th)*r);
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0x9fb0c8, size:1.5, sizeAttenuation:false, fog:false, transparent:true, opacity:0.75})));
+  })();
+
+  // --- Luna bonita (disco con mares + halo suave) ---
+  (function(){
+    // disco
+    const c=document.createElement('canvas'); c.width=c.height=256;
+    const x=c.getContext('2d');
+    const base=x.createRadialGradient(118,110,20,128,128,128);
+    base.addColorStop(0,'#fbfaf2'); base.addColorStop(0.7,'#e9ecf3'); base.addColorStop(1,'#c3ccdd');
+    x.fillStyle=base; x.beginPath(); x.arc(128,128,120,0,7); x.fill();
+    // mares (manchas) y cráteres
+    for(let i=0;i<26;i++){ const cx=40+Math.random()*176, cy=40+Math.random()*176;
+      if(Math.hypot(cx-128,cy-128)>112) continue;
+      const rr=6+Math.random()*26; x.fillStyle='rgba(150,162,186,'+(0.10+Math.random()*0.22)+')';
+      x.beginPath(); x.arc(cx,cy,rr,0,7); x.fill(); }
+    const mt=new THREE.CanvasTexture(c); mt.encoding=THREE.sRGBEncoding;
+    const disc=new THREE.Sprite(new THREE.SpriteMaterial({map:mt, fog:false, depthWrite:false, transparent:true}));
+    disc.scale.set(34,34,1); disc.position.copy(MOON_POS); scene.add(disc);
+    // halo
+    const hc=document.createElement('canvas'); hc.width=hc.height=256;
+    const hx=hc.getContext('2d'); const hg=hx.createRadialGradient(128,128,20,128,128,128);
+    hg.addColorStop(0,'rgba(210,224,255,0.5)'); hg.addColorStop(0.35,'rgba(170,190,235,0.22)');
+    hg.addColorStop(1,'rgba(150,175,220,0)');
+    hx.fillStyle=hg; hx.fillRect(0,0,256,256);
+    const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(hc),
+      fog:false, depthWrite:false, transparent:true, blending:THREE.AdditiveBlending}));
+    halo.scale.set(150,150,1); halo.position.copy(MOON_POS); scene.add(halo);
+  })();
+
+  // --- Nubes a la deriva (sprites suaves) ---
+  (function(){
+    const c=document.createElement('canvas'); c.width=256; c.height=128;
+    const x=c.getContext('2d');
+    for(let i=0;i<26;i++){ const cx=40+Math.random()*176, cy=40+Math.random()*48, rr=24+Math.random()*44;
+      const gr=x.createRadialGradient(cx,cy,0,cx,cy,rr);
+      gr.addColorStop(0,'rgba(60,70,90,0.5)'); gr.addColorStop(1,'rgba(60,70,90,0)');
+      x.fillStyle=gr; x.beginPath(); x.arc(cx,cy,rr,0,7); x.fill(); }
+    const ct=new THREE.CanvasTexture(c);
+    for(let i=0;i<9;i++){
+      const s=new THREE.Sprite(new THREE.SpriteMaterial({map:ct, fog:false, depthWrite:false,
+        transparent:true, opacity:0.35+Math.random()*0.3}));
+      const sc=90+Math.random()*130; s.scale.set(sc,sc*0.5,1);
+      s.position.set((Math.random()*2-1)*380, 120+Math.random()*90, (Math.random()*2-1)*380);
+      scene.add(s); clouds.push({s, speed:2+Math.random()*4});
+    }
+  })();
+
+  // --- Iluminación: noche cerrada. Sin linterna apenas ves nada (como el original) ---
+  const hemi = new THREE.HemisphereLight(0x38455d, 0x080b08, 0.16);
+  scene.add(hemi);
+  const moon = new THREE.DirectionalLight(0x8ea6cf, 0.22);   // borde tenue de luna en los árboles
+  moon.position.copy(MOON_POS);
+  scene.add(moon);
+  const amb = new THREE.AmbientLight(0x0d121c, 0.06);
+  scene.add(amb);
+  const sun = new THREE.DirectionalLight(0xfff2d8, 0);       // apagado hasta el amanecer del final
+  sun.position.set(70,120,40);
+  scene.add(sun);
+
+  // Linterna: foco enganchado a la cámara. Penumbra alta = charco de luz suave (como la foto)
+  const torch = new THREE.SpotLight(0xffe7bd, 0, 60, 0.52, 0.8, 1.25);
+  torch.position.set(0.2,-0.1,0.2);
+  torch.castShadow = true;
+  torch.shadow.mapSize.set(1024,1024);
+  torch.shadow.camera.near = 0.5;
+  torch.shadow.camera.far = 58;
+  torch.shadow.bias = -0.0007;
+  camera.add(torch);
+  camera.add(torch.target);
+  torch.target.position.set(0,-0.05,-1);
+
+  // ===================== Materiales PBR reales (texturas CC0 de ambientCG) =====================
+  const texLoader = new THREE.TextureLoader();
+  function pbrMat(name, rx, ry, opts){
+    opts = opts || {};
+    const col = texLoader.load('assets/'+name+'_color.jpg');
+    const nrm = texLoader.load('assets/'+name+'_normal.jpg');
+    const rgh = texLoader.load('assets/'+name+'_rough.jpg');
+    col.encoding = THREE.sRGBEncoding;
+    [col,nrm,rgh].forEach(t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); t.anisotropy=8; });
+    return new THREE.MeshStandardMaterial({ map:col, normalMap:nrm, roughnessMap:rgh,
+      metalness: opts.metalness!=null?opts.metalness:0,
+      roughness: opts.roughness!=null?opts.roughness:1,
+      color: opts.color!=null?opts.color:0xffffff });
+  }
+
+  // ===================== Suelo (bosque, PBR) =====================
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD*2+40, WORLD*2+40),
+    pbrMat('ground', 55, 55, {roughness:1})
+  );
+  ground.rotation.x = -Math.PI/2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // ===================== Obstáculos (para colisión y oclusión de la vista) =====================
+  // Cada obstáculo = círculo en el plano XZ {x,z,r}
+  const blockers = [];
+
+  // --- Árboles: pino por capas (tronco + 3 conos), instanciado ---
+  const trunkGeo = new THREE.CylinderGeometry(0.14, 0.34, 5.4, 8);
+  const trunkMat = pbrMat('bark', 1.4, 3, {roughness:0.95});
+  const foliageLoGeo = new THREE.ConeGeometry(2.2, 3.0, 8);
+  const foliageMdGeo = new THREE.ConeGeometry(1.75, 2.8, 8);
+  const foliageHiGeo = new THREE.ConeGeometry(1.2, 2.6, 8);
+  const foliageMat = new THREE.MeshLambertMaterial({ color:0xffffff });  // color real vía instanceColor
+  const trunks    = new THREE.InstancedMesh(trunkGeo, trunkMat, NUM_TREES);
+  const foliageLo = new THREE.InstancedMesh(foliageLoGeo, foliageMat, NUM_TREES);
+  const foliageMd = new THREE.InstancedMesh(foliageMdGeo, foliageMat, NUM_TREES);
+  const foliageHi = new THREE.InstancedMesh(foliageHiGeo, foliageMat, NUM_TREES);
+  // los árboles NO proyectan sombra (para poder tener cientos); sí la reciben
+  [trunks, foliageLo, foliageMd, foliageHi].forEach(m=>{ m.castShadow=false; m.receiveShadow=true; scene.add(m); });
+
+  // --- Arbustos / maleza (instanciado, decorativo) ---
+  const bushGeo = new THREE.IcosahedronGeometry(1, 0);
+  const bushMat = new THREE.MeshLambertMaterial({ color:0xffffff });
+  const bushes = new THREE.InstancedMesh(bushGeo, bushMat, NUM_BUSHES);
+  bushes.castShadow=false; bushes.receiveShadow=true; scene.add(bushes);
+
+  // ===================== Estructuras "landmark" (como el original) =====================
+  // Guardamos también un punto de anclaje para una página.
+  const landmarks = [];
+  const matBrick  = pbrMat('brick', 2.5, 2.5, {roughness:0.9});
+  const matMetal  = pbrMat('metal', 3,   3,   {metalness:0.55, roughness:0.5});
+  const matRust   = pbrMat('rust',  2,   2,   {metalness:0.25, roughness:0.75});
+  const matRock   = pbrMat('rock',  2,   2,   {roughness:0.9});
+  const matWood   = pbrMat('wood',  2,   2,   {roughness:0.85});
+  const matDark   = new THREE.MeshStandardMaterial({ color:0x0a0a0a, roughness:0.9 });
+
+  // Helpers: construyen mallas en coordenadas LOCALES del grupo de la estructura
+  function box(w,h,d,mat,x,y,z,ry){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+    m.position.set(x,y,z); if(ry) m.rotation.y = ry; return m;
+  }
+  function cyl(rt,rb,h,mat,x,y,z,seg){
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||16), mat);
+    m.position.set(x,y,z); return m;
+  }
+  const leafMat = new THREE.MeshLambertMaterial({ color:0x223d1a });
+
+  // mounts: punto exacto (pegado a la superficie) donde va cada página; ry = normal hacia fuera
+  const mounts = [];
+  const solidBoxes = [];     // colisión por caja orientada (edificios/vehículos/verja)
+  function struct(x,z,r,gry,build,boxColl){
+    const g=new THREE.Group(); g.position.set(x,0,z); if(gry) g.rotation.y=gry;
+    const co=Math.cos(gry||0), si=Math.sin(gry||0);
+    // convierte un punto local (superficie) a mundo, usando la rotación Y de Three
+    function mount(lx,ly,lz,lry){ mounts.push({ x:x+co*lx+si*lz, y:ly, z:z-si*lx+co*lz, ry:(gry||0)+(lry||0) }); }
+    build(g, mount); scene.add(g);
+    landmarks.push({x,z});
+    if (boxColl){ blockers.push({x,z,r,nocol:true});            // círculo sólo para oclusión
+      solidBoxes.push({x,z,hw:boxColl[0],hd:boxColl[1],cos:co,sin:si}); }
+    else blockers.push({x,z,r});
+  }
+
+  // 1. Gran árbol
+  struct(40,-55, 1.7, 0, (g,mount)=>{
+    g.add(cyl(0.75,1.4, 9, matWood, 0,4.5,0, 12));
+    g.add(cyl(1.4,1.9, 1.3, matWood, 0,0.65,0, 12));
+    const b1=box(0.3,4.5,0.3,matWood, 1.4,7,0.2); b1.rotation.z=0.5; g.add(b1);
+    const b2=box(0.3,4,0.3,matWood, -1.4,7.4,-0.4); b2.rotation.z=-0.6; g.add(b2);
+    [[0,9.6,0,3.3],[2.4,9.1,0.6,2.3],[-2.2,9.3,-0.6,2.5],[0.6,10.8,1,2.1],[-1,10.2,-1.6,1.9]]
+      .forEach(p=>{ const m=new THREE.Mesh(new THREE.IcosahedronGeometry(p[3],1), leafMat); m.position.set(p[0],p[1],p[2]); g.add(m); });
+    mount(0, 1.7, 1.12, 0);                     // clavada en el tronco
+  });
+
+  // 2. Camioneta abandonada
+  struct(-62,30, 3.3, 0.6, (g,mount)=>{
+    g.add(box(6,0.5,2.4, matRust, 0,1.0,0));
+    g.add(box(2.0,1.4,2.4, matRust, -2.0,1.95,0));
+    g.add(box(1.5,0.75,2.42, matDark, -2.0,2.25,0));
+    g.add(box(4,0.9,0.14, matRust, 1.0,1.65,1.13));
+    g.add(box(4,0.9,0.14, matRust, 1.0,1.65,-1.13));
+    g.add(box(0.14,0.9,2.4, matRust, 3.0,1.65,0));
+    const wheel=(wx,wz)=>{ const w=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.4,16), matDark); w.rotation.x=Math.PI/2; w.position.set(wx,0.55,wz); return w; };
+    g.add(wheel(-2.2,1.25)); g.add(wheel(-2.2,-1.25)); g.add(wheel(1.9,1.25)); g.add(wheel(1.9,-1.25));
+    mount(0.8, 1.5, 1.26, 0);                   // pegada al lateral de la caja
+  }, [3.0,1.25]);
+
+  // 3. Baños de ladrillo
+  struct(20,80, 4.6, 0, (g,mount)=>{
+    g.add(box(8,3.4,5, matBrick, 0,1.7,0));
+    g.add(box(8.6,0.4,5.6, matMetal, 0,3.6,0));
+    g.add(box(1.6,2.5,0.3, matDark, -2,1.25,2.55));
+    g.add(box(1.6,2.5,0.3, matDark,  2,1.25,2.55));
+    mount(0, 1.85, 2.53, 0);                    // en el muro, entre las puertas
+  }, [4.0,2.5]);
+
+  // 4. Túnel de hormigón
+  struct(75,55, 3.0, 0, (g,mount)=>{
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.6,9,20,1,true), matRock);
+    t.rotation.z=Math.PI/2; t.position.y=2.6; g.add(t);
+    [-4.5,4.5].forEach(zx=>{ const rr=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.28,10,20), matRock); rr.rotation.y=Math.PI/2; rr.position.set(zx,2.6,0); g.add(rr); });
+    mount(0, 1.5, 2.34, 0);                     // en la pared curva del tubo
+  });
+
+  // 5. Silo / tanque
+  struct(-80,-60, 3.9, 0, (g,mount)=>{
+    g.add(cyl(3.6,3.6,11, matMetal, 0,5.5,0, 24));
+    g.add(cyl(0.05,3.8,2.2, matMetal, 0,12,0, 24));
+    [2,5,8].forEach(by=>{ const rr=new THREE.Mesh(new THREE.TorusGeometry(3.63,0.12,8,26), matMetal); rr.rotation.x=Math.PI/2; rr.position.y=by; g.add(rr); });
+    for(let i=0;i<10;i++) g.add(box(0.55,0.06,0.06, matMetal, 3.6,1+i,0));
+    mount(0, 1.7, 3.62, 0);                     // pegada al depósito
+  });
+
+  // 6. Rocas / peñascos
+  struct(-30,-95, 2.7, 0, (g,mount)=>{
+    for(let i=0;i<7;i++){ const r=1.2+Math.random()*2.0;
+      const m=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0), matRock);
+      m.position.set((Math.random()-0.5)*5, r*0.55, (Math.random()-0.5)*5);
+      m.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3); g.add(m); }
+    mount(0.3, 1.3, 1.85, 0);                   // apoyada en una roca
+  });
+
+  // 7. Bidones de combustible sobre palet
+  struct(90,-25, 2.4, 0, (g,mount)=>{
+    g.add(box(4,0.28,4, matWood, 0,0.14,0));
+    const red=new THREE.MeshLambertMaterial({color:0x6a2a20});
+    const spots=[[-1,-1,matRust],[1,-1,red],[-1,1,red],[1,1,matRust],[0,0,matRust]];
+    spots.forEach(d=>{ g.add(cyl(0.7,0.7,1.9,d[2], d[0],1.24,d[1],16));
+      [0.7,1.7].forEach(ry2=>{ const rr=new THREE.Mesh(new THREE.TorusGeometry(0.71,0.05,6,14), matDark); rr.rotation.x=Math.PI/2; rr.position.set(d[0],ry2,d[1]); g.add(rr); }); });
+    mount(0, 1.4, 1.72, 0);                     // pegada a un bidón
+  });
+
+  // 8. Verja de madera con la "X"
+  struct(-100,60, 2.2, 0, (g,mount)=>{
+    g.add(box(0.3,3,0.3, matWood, -2,1.5,0));
+    g.add(box(0.3,3,0.3, matWood,  2,1.5,0));
+    g.add(box(4.3,0.25,0.22, matWood, 0,2.5,0));
+    g.add(box(4.3,0.25,0.22, matWood, 0,1.0,0));
+    const p1=box(0.2,4.2,0.2, matWood, 0,1.75,0); p1.rotation.z=0.72; g.add(p1);
+    const p2=box(0.2,4.2,0.2, matWood, 0,1.75,0); p2.rotation.z=-0.72; g.add(p2);
+    mount(0, 1.75, 0.15, 0);                    // sobre la verja
+  }, [2.2,0.25]);
+
+  // Valla perimetral (referencia; la niebla y los árboles la ocultan casi siempre)
+  [[0,WORLD,WORLD*2,0.5],[0,-WORLD,WORLD*2,0.5],[WORLD,0,0.5,WORLD*2],[-WORLD,0,0.5,WORLD*2]]
+    .forEach(f=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(f[2],2.6,f[3]), matWood);
+      m.position.set(f[0],1.3,f[1]); scene.add(m); });
+
+  // --- Colocar árboles (bosque denso) con rejilla espacial ---
+  const structBlockers = blockers.slice();     // sólo estructuras (aún sin árboles)
+  const dummy = new THREE.Object3D();
+  const _c = new THREE.Color();
+  const CS = 2.5, tgrid = new Map();
+  const tkey = (x,z)=> Math.floor(x/CS)+','+Math.floor(z/CS);
+  function tClose(x,z){ const gx=Math.floor(x/CS), gz=Math.floor(z/CS);
+    for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){ const arr=tgrid.get((gx+a)+','+(gz+b)); if(!arr) continue;
+      for(const p of arr) if((x-p[0])*(x-p[0])+(z-p[1])*(z-p[1]) < CS*CS) return true; } return false; }
+  let placed=0, guard=0;
+  while (placed<NUM_TREES && guard<NUM_TREES*30){
+    guard++;
+    const x=(Math.random()*2-1)*(WORLD-5), z=(Math.random()*2-1)*(WORLD-5);
+    if (x*x+z*z < 64) continue;                       // deja libre el inicio (8 m)
+    let bad=false;
+    for (const b of structBlockers){ if (Math.hypot(x-b.x,z-b.z) < b.r+3){ bad=true; break; } }
+    if (bad || tClose(x,z)) continue;
+    const s=0.9+Math.random()*1.0, ry=Math.random()*6.28;
+    dummy.rotation.set(0,ry,0);
+    dummy.position.set(x,2.7*s,z); dummy.scale.set(s,s,s);        dummy.updateMatrix(); trunks.setMatrixAt(placed,dummy.matrix);
+    dummy.position.set(x,4.7*s,z); dummy.scale.set(s,s,s);        dummy.updateMatrix(); foliageLo.setMatrixAt(placed,dummy.matrix);
+    dummy.position.set(x,6.0*s,z); dummy.scale.set(s*0.9,s,s*0.9); dummy.updateMatrix(); foliageMd.setMatrixAt(placed,dummy.matrix);
+    dummy.position.set(x,7.1*s,z); dummy.scale.set(s*0.78,s,s*0.78); dummy.updateMatrix(); foliageHi.setMatrixAt(placed,dummy.matrix);
+    const tint=0.72+Math.random()*0.55; _c.setRGB(0.16*tint,0.30*tint,0.13*tint);
+    foliageLo.setColorAt(placed,_c); foliageMd.setColorAt(placed,_c); foliageHi.setColorAt(placed,_c);
+    blockers.push({x,z,r:0.35*s});
+    const k=tkey(x,z); let arr=tgrid.get(k); if(!arr){arr=[];tgrid.set(k,arr);} arr.push([x,z]);
+    placed++;
+  }
+  [trunks,foliageLo,foliageMd,foliageHi].forEach(m=>{ m.count=placed; m.instanceMatrix.needsUpdate=true; });
+  [foliageLo,foliageMd,foliageHi].forEach(m=>{ if(m.instanceColor) m.instanceColor.needsUpdate=true; });
+
+  // --- Arbustos / maleza (rellena el suelo, ayuda a esconder a Slender) ---
+  let bplaced=0, bguard=0;
+  while (bplaced<NUM_BUSHES && bguard<NUM_BUSHES*20){
+    bguard++;
+    const x=(Math.random()*2-1)*(WORLD-4), z=(Math.random()*2-1)*(WORLD-4);
+    if (x*x+z*z < 36) continue;
+    let bad=false;
+    for (const b of structBlockers){ if (Math.hypot(x-b.x,z-b.z) < b.r+1.5){ bad=true; break; } }
+    if (bad) continue;
+    const sx=0.5+Math.random()*1.2, sy=0.35+Math.random()*0.6, sz=0.5+Math.random()*1.2;
+    dummy.rotation.set(0,Math.random()*6.28,0);
+    dummy.position.set(x, sy*0.5, z); dummy.scale.set(sx,sy,sz); dummy.updateMatrix();
+    bushes.setMatrixAt(bplaced, dummy.matrix);
+    const tint=0.6+Math.random()*0.5; _c.setRGB(0.12*tint,0.22*tint,0.10*tint);
+    bushes.setColorAt(bplaced,_c);
+    bplaced++;
+  }
+  bushes.count=bplaced; bushes.instanceMatrix.needsUpdate=true;
+  if (bushes.instanceColor) bushes.instanceColor.needsUpdate=true;
+
+  // ===================== Slender =====================
+  const slender = new THREE.Group();
+  let slHead=null; const slArms=[]; const slTentacles=[];
+  (function(){
+    const suit  = new THREE.MeshStandardMaterial({ color:0x070708, roughness:0.62, metalness:0.0 });
+    const shirt = new THREE.MeshStandardMaterial({ color:0xb9b9bd, roughness:0.7 });
+    const skin  = new THREE.MeshStandardMaterial({ color:0xe9e5db, roughness:0.78, emissive:0x24211c, emissiveIntensity:0.75 });
+    // piernas largas
+    const legGeo=new THREE.CylinderGeometry(0.085,0.07,1.5,8);
+    const ll=new THREE.Mesh(legGeo,suit); ll.position.set(-0.14,0.75,0); slender.add(ll);
+    const rl=new THREE.Mesh(legGeo,suit); rl.position.set( 0.14,0.75,0); slender.add(rl);
+    // torso afilado + camisa + corbata
+    const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.30,1.5,10), suit); torso.position.y=2.15; slender.add(torso);
+    const chest=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,0.9,8), shirt); chest.position.set(0,2.2,0.11); slender.add(chest);
+    const tie  =new THREE.Mesh(new THREE.BoxGeometry(0.07,0.6,0.04), new THREE.MeshStandardMaterial({color:0x0e0e12,roughness:0.6})); tie.position.set(0,2.15,0.22); slender.add(tie);
+    // hombros, cuello y cabeza pálida alargada
+    const shoulders=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.24,0.22,10), suit); shoulders.position.y=2.86; slender.add(shoulders);
+    const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.22,8), skin); neck.position.y=3.02; slender.add(neck);
+    slHead=new THREE.Mesh(new THREE.SphereGeometry(0.24,20,20), skin);
+    slHead.scale.set(0.92,1.45,0.92); slHead.position.y=3.34; slender.add(slHead);
+    // brazos larguísimos (grupos-pivote en el hombro para balancearse)
+    function arm(side){
+      const grp=new THREE.Group(); grp.position.set(0.28*side,2.82,0);
+      const upper=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.05,1.2,7), suit); upper.position.set(0,-0.6,0); grp.add(upper);
+      const fore =new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.035,1.2,7), suit); fore.position.set(0,-1.75,0); grp.add(fore);
+      const hand=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8), skin); hand.position.y=-2.4; hand.scale.set(1,1.7,1); grp.add(hand);
+      grp.rotation.z = -0.08*side;
+      slender.add(grp); slArms.push(grp);
+    }
+    arm(-1); arm(1);
+    // tentáculos (ocultos hasta que acecha de cerca / baja la cordura)
+    const tentMat=new THREE.MeshStandardMaterial({color:0x050506, roughness:0.7});
+    for(let i=0;i<6;i++){
+      const pivot=new THREE.Group(); const ang=(i/6)*Math.PI*2;
+      pivot.position.set(Math.cos(ang)*0.14, 2.7, -0.16 + Math.sin(ang)*0.08);
+      const seg=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.11,2.7,6), tentMat);
+      seg.position.y=1.35; pivot.add(seg);
+      pivot.rotation.set(-0.35+Math.random()*0.2, ang, (i%2?0.35:-0.35));
+      pivot.scale.setScalar(0.001);
+      slender.add(pivot); slTentacles.push({pivot, phase:Math.random()*6.28, base:pivot.rotation.clone()});
+    }
+  })();
+  slender.position.set(0,-200,0);   // fuera del mapa hasta empezar
+  scene.add(slender);
+  const slenderHead = new THREE.Vector3();
+
+  // ===================== Páginas =====================
+  const PAGE_MSGS = [
+    ['DÉJAME', 'EN PAZ'], ['NO NO NO','NO NO NO'], ['SIEMPRE','OBSERVA','SIN OJOS'],
+    ['NO','PUEDO','CORRER'], ['NO MIRES','ATRÁS'], ['ME','SIGUE'],
+    ['AYÚDA','ME'], ['ÉL ESTÁ','AQUÍ']
+  ];
+  function pageTexture(i){
+    const c=document.createElement('canvas'); c.width=256; c.height=320;
+    const x=c.getContext('2d');
+    x.fillStyle='#d8d2c0'; x.fillRect(0,0,256,320);
+    // manchas
+    for(let k=0;k<40;k++){ x.fillStyle='rgba(80,70,50,'+(Math.random()*0.08)+')';
+      x.beginPath(); x.arc(Math.random()*256,Math.random()*320,Math.random()*30,0,7); x.fill(); }
+    x.fillStyle='#1a1712'; x.textAlign='center'; x.font='bold 34px "Courier New",monospace';
+    const lines=PAGE_MSGS[i]; const y0=160-(lines.length-1)*22;
+    lines.forEach((ln,j)=>{ x.save();
+      x.translate(128, y0+j*44); x.rotate((Math.random()-0.5)*0.06); x.fillText(ln,0,0); x.restore(); });
+    // garabato: figura y árbol
+    x.strokeStyle='#1a1712'; x.lineWidth=3;
+    if(i===2||i===7){ x.beginPath(); x.moveTo(60,250); x.lineTo(60,300); x.moveTo(60,262);
+      x.lineTo(40,285); x.moveTo(60,262); x.lineTo(80,285); x.stroke();
+      x.beginPath(); x.arc(60,242,9,0,7); x.stroke();
+      x.beginPath(); x.moveTo(180,300); x.lineTo(180,250); x.stroke();
+      x.beginPath(); x.arc(180,238,20,0,7); x.stroke(); }
+    const t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding; return t;
+  }
+  const pages = [];
+  (function(){
+    // baraja qué texto va en cada estructura
+    for(let i=mounts.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0;
+      const t=mounts[i]; mounts[i]=mounts[j]; mounts[j]=t; }
+    for(let i=0;i<8;i++){
+      const a=mounts[i];
+      const mat=new THREE.MeshLambertMaterial({ map:pageTexture(i), side:THREE.DoubleSide,
+        emissive:0x1a1913, emissiveIntensity:0.45 });       // resalta con la linterna, no de lejos
+      const m=new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.66), mat);
+      // desplaza 4 cm en la normal para quedar justo sobre la superficie sin z-fighting
+      m.position.set(a.x + Math.sin(a.ry)*0.04, a.y, a.z + Math.cos(a.ry)*0.04);
+      m.rotation.y=a.ry;
+      scene.add(m);
+      pages.push({ mesh:m, taken:false, x:a.x, z:a.z });
+    }
+  })();
+
+  // Sombras: estructuras y Slender proyectan/reciben (suelo y cielo excluidos)
+  scene.traverse(o=>{
+    if (o.isMesh && !o.isInstancedMesh && o.name!=='sky' && o!==ground){ o.castShadow=true; o.receiveShadow=true; }
+  });
+
+  // ===================== Modelo de linterna (primera persona) =====================
+  let flashModel=null, flashLens=null, flashHalo=null;
+  const FLASH_BASE = new THREE.Vector3(0.28, -0.32, -0.62);
+  (function(){
+    flashModel = new THREE.Group();
+    const metal = new THREE.MeshStandardMaterial({ color:0x16191d, metalness:0.85, roughness:0.38 });
+    const bezel = new THREE.MeshStandardMaterial({ color:0x2b2f34, metalness:0.9, roughness:0.3 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.030,0.034,0.30,18), metal);
+    body.rotation.x = Math.PI/2; flashModel.add(body);
+    for(let i=0;i<3;i++){ const ring=new THREE.Mesh(new THREE.TorusGeometry(0.0335,0.004,8,18), bezel);
+      ring.position.z = 0.00 + i*0.045; flashModel.add(ring); }
+    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.052,0.035,0.075,20), bezel);
+    head.rotation.x = Math.PI/2; head.position.z = -0.178; flashModel.add(head);
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.030,0.026,0.03,18), bezel);
+    tail.rotation.x = Math.PI/2; tail.position.z = 0.162; flashModel.add(tail);
+    const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.010,0.010,0.012,10), new THREE.MeshStandardMaterial({color:0x883322,metalness:0.4,roughness:0.6}));
+    btn.position.set(0,-0.035,0.05); flashModel.add(btn);
+    // lente (brilla al encender)
+    flashLens = new THREE.Mesh(new THREE.CircleGeometry(0.046,20),
+      new THREE.MeshBasicMaterial({ color:0x140f07 }));
+    flashLens.position.z = -0.214; flashLens.rotation.y = Math.PI; flashModel.add(flashLens);
+    // halo suave frente a la lente
+    const hc=document.createElement('canvas'); hc.width=hc.height=64;
+    const hx=hc.getContext('2d'); const hg=hx.createRadialGradient(32,32,2,32,32,32);
+    hg.addColorStop(0,'rgba(255,235,190,0.9)'); hg.addColorStop(1,'rgba(255,235,190,0)');
+    hx.fillStyle=hg; hx.fillRect(0,0,64,64);
+    flashHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map:new THREE.CanvasTexture(hc),
+      transparent:true, blending:THREE.AdditiveBlending, depthTest:false, opacity:0 }));
+    flashHalo.scale.set(0.14,0.14,1); flashHalo.position.set(0,0,-0.22); flashModel.add(flashHalo);
+
+    flashModel.position.copy(FLASH_BASE);
+    flashModel.rotation.set(-0.05, -0.10, 0.03);
+    flashModel.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
+    flashModel.renderOrder = 10;
+    camera.add(flashModel);
+  })();
+
+  // (El haz volumétrico geométrico se retiró: se veía como un cilindro sólido.
+  //  El foco con penumbra ya crea el charco de luz suave de la referencia.)
+  let flashBeam=null;
+
+  // Motas de polvo flotando (se revelan dentro del haz de la linterna)
+  let dust=null; const DUST_N=150; const dustBase=[];
+  (function(){
+    const pos=new Float32Array(DUST_N*3);
+    for(let i=0;i<DUST_N;i++){ const x=(Math.random()-0.5)*22, y=Math.random()*5.5, z=(Math.random()-0.5)*22;
+      dustBase.push([x,y,z]); pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z; }
+    const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    dust=new THREE.Points(g, new THREE.PointsMaterial({ color:0xaab0b8, size:0.05,
+      transparent:true, opacity:0.45, depthWrite:false }));
+    scene.add(dust);
+  })();
+
+  // ===================== Audio procedural (WebAudio) =====================
+  let AC=null, master=null, windGain=null, staticGain=null, droneGains=[], drones=[], noiseBuf=null;
+  function initAudio(){
+    if (AC) return;
+    AC = new (window.AudioContext||window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+    // buffer de ruido blanco reutilizable
+    noiseBuf = AC.createBuffer(1, AC.sampleRate*2, AC.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    // Viento
+    const w = AC.createBufferSource(); w.buffer=noiseBuf; w.loop=true;
+    const wf = AC.createBiquadFilter(); wf.type='lowpass'; wf.frequency.value=380;
+    windGain = AC.createGain(); windGain.gain.value=0.0;
+    w.connect(wf); wf.connect(windGain); windGain.connect(master); w.start();
+    // Estática (sube con la interferencia visual)
+    const s = AC.createBufferSource(); s.buffer=noiseBuf; s.loop=true;
+    const sf = AC.createBiquadFilter(); sf.type='highpass'; sf.frequency.value=1500;
+    staticGain = AC.createGain(); staticGain.gain.value=0.0;
+    s.connect(sf); sf.connect(staticGain); staticGain.connect(master); s.start();
+    // Drones (capas de "música" que se intensifican con las páginas)
+    const freqs=[41,55,61.7,82];
+    freqs.forEach(f=>{ const o=AC.createOscillator(); o.type='sine'; o.frequency.value=f;
+      const o2=AC.createOscillator(); o2.type='sine'; o2.frequency.value=f*1.005;
+      const g=AC.createGain(); g.gain.value=0; o.connect(g); o2.connect(g); g.connect(master);
+      o.start(); o2.start(); drones.push([o,o2]); droneGains.push(g); });
+  }
+  function noiseBurst(dur, type, freq, q, gain){
+    if(!AC) return;
+    const s=AC.createBufferSource(); s.buffer=noiseBuf; s.loop=true;
+    const f=AC.createBiquadFilter(); f.type=type||'bandpass'; f.frequency.value=freq||600; f.Q.value=q||1;
+    const g=AC.createGain(); const t=AC.currentTime;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(gain||0.3,t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t+dur+0.05);
+  }
+  function tone(freq, dur, type, gain){
+    if(!AC) return;
+    const o=AC.createOscillator(); o.type=type||'sine'; o.frequency.value=freq;
+    const g=AC.createGain(); const t=AC.currentTime;
+    g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(gain||0.3,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+0.05);
+  }
+  function stinger(){ // el "susto" al verlo por primera vez
+    if(!AC) return;
+    [155,220,233,311].forEach((f,i)=> tone(f, 0.9, i%2?'sawtooth':'square', 0.14));
+    noiseBurst(0.5,'highpass',2000,1,0.5);
+  }
+  function heartbeat(vol){
+    tone(58, 0.16, 'sine', 0.5*vol);
+    setTimeout(()=>tone(50,0.20,'sine',0.42*vol), 150);
+  }
+  function jumpscareSound(){
+    noiseBurst(1.4,'lowpass',900,1,0.9);
+    [70,74,110,147].forEach(f=>tone(f,1.4,'sawtooth',0.28));
+  }
+  function footstep(){ noiseBurst(0.09,'bandpass',260+Math.random()*120,1.2,0.28); }
+
+  // ===================== Utilidades geométricas =====================
+  const _v = new THREE.Vector3(), _fwd = new THREE.Vector3();
+
+  // ¿el segmento p->q (en XZ) pasa a través de algún obstáculo? (oclusión de la vista)
+  function occluded(px,pz, qx,qz){
+    const dx=qx-px, dz=qz-pz; const len2=dx*dx+dz*dz;
+    for(const b of blockers){
+      const t=((b.x-px)*dx+(b.z-pz)*dz)/len2;
+      if(t<=0.02||t>=0.98) continue;
+      const cx=px+dx*t, cz=pz+dz*t;
+      if((cx-b.x)*(cx-b.x)+(cz-b.z)*(cz-b.z) < b.r*b.r) return true;
+    }
+    return false;
+  }
+
+  // ¿el jugador ve a Slender? (cono de visión + niebla + oclusión) — independiente de la luz
+  function computeCanSee(){
+    slenderHead.set(slender.position.x, slender.position.y+2.6, slender.position.z);
+    const eye = camera.position;
+    const dist = eye.distanceTo(slenderHead);
+    const maxSight = Math.min(-Math.log(0.14)/G.fogDensity, 55);  // limitado por la niebla
+    if (dist > maxSight) return {see:false, dist};
+    _v.copy(slenderHead).sub(eye).normalize();
+    camera.getWorldDirection(_fwd);
+    const cosAng = _fwd.dot(_v);
+    const halfFov = THREE.MathUtils.degToRad(G.zoom)/2;
+    const cosLimit = Math.cos(halfFov * camera.aspect * 0.85 + 0.12);
+    if (cosAng < cosLimit) return {see:false, dist};
+    if (occluded(eye.x,eye.z, slenderHead.x,slenderHead.z)) return {see:false, dist};
+    return {see:true, dist};
+  }
+
+  // ===================== IA de Slender (teletransporte) =====================
+  function tryTeleport(inFront){
+    for(let i=0;i<40;i++){
+      const ang = Math.random()*Math.PI*2;
+      const d = G.minrange + Math.random()*(G.maxrange-G.minrange);
+      const tx = camera.position.x + Math.cos(ang)*d;
+      const tz = camera.position.z + Math.sin(ang)*d;
+      if (Math.abs(tx)>WORLD-3 || Math.abs(tz)>WORLD-3) continue;
+      // debe aparecer donde NO estás mirando (fuera del cono) o tapado por algo
+      _v.set(tx - camera.position.x, 0, tz - camera.position.z).normalize();
+      camera.getWorldDirection(_fwd); _fwd.y=0; _fwd.normalize();
+      const cosAng = _fwd.dot(_v);
+      const behind = cosAng < 0.35;                          // fuera de tu vista
+      const hidden = occluded(camera.position.x,camera.position.z, tx,tz);
+      if (inFront){ if (cosAng < 0.55) continue; }           // finale: aparece delante
+      else if (!behind && !hidden) continue;
+      slender.position.set(tx, 0, tz);
+      const look = Math.atan2(camera.position.x-tx, camera.position.z-tz);
+      slender.rotation.y = look;
+      if (G.cansee) G.flicker = 3;
+      return true;
+    }
+    return false;
+  }
+
+  function slenderAI(){
+    if (G.pages + G.level <= 0) return;        // no aparece hasta la 1ª página / subida de nivel
+    if (G.lost || G.won) return;
+
+    const dist = camera.position.distanceTo(slender.position);
+
+    // ¿te atrapó?
+    if (dist < 2.0 && slender.position.y > -10){
+      camera.getWorldDirection(_fwd); _fwd.y=0; _fwd.normalize();
+      _v.set(slender.position.x-camera.position.x,0,slender.position.z-camera.position.z).normalize();
+      if (_fwd.dot(_v) > 0.2 || G.pages>=8){ G.caught = true; }
+    }
+
+    // Finale con las 8 páginas: ya no hay escapatoria, se acerca sin parar
+    if (G.pages >= 8){
+      if (G.finaldelay > 0){ G.finaldelay--; }
+      else {
+        G.makejump++;
+        if (G.makejump >= 90){ G.makejump=0;
+          G.maxrange = Math.max(6, G.maxrange-2); G.minrange = Math.max(3, G.minrange-1);
+          tryTeleport(true); }                       // reaparece delante, cada vez más cerca
+        if (slender.position.y > -10){               // y se desliza hacia ti
+          const step = 3.2*TICK;
+          _v.set(camera.position.x-slender.position.x,0,camera.position.z-slender.position.z);
+          const dd=_v.length();
+          if (dd>0.1){ _v.normalize();
+            slender.position.x += _v.x*step; slender.position.z += _v.z*step;
+            slender.rotation.y = Math.atan2(-_v.x,-_v.z); }
+        }
+      }
+      return;
+    }
+
+    // estado de persecución (original): si te ve de cerca, se fija en tu posición
+    if (dist < 30 && G.cansee) G.chasing = true;
+    else if (dist >= 30)       G.chasing = false;
+
+    const aggressiveAlways = (G.pages + G.level) >= 6;   // con 6+ ya no espera a que mires
+    if (!G.cansee || aggressiveAlways){
+      G.mightport = 0;
+      G.makejump++;
+      const threshold = Math.max(50, 550 - (G.pages+G.level)*50);
+      // no se teletransporta mientras te persigue de cerca, salvo que estés lejos
+      if (G.makejump >= threshold && (!G.chasing || (dist>10 && Math.random()<=0.2))){
+        G.makejump = 0;
+        const inFront = (dist > G.maxrange) ? false : (Math.random() < 0.1);
+        tryTeleport(inFront);
+      }
+      // acecho: si te persigue y no lo miras, se desliza hacia ti (vel. sube con páginas)
+      if (G.chasing && !G.cansee && slender.position.y > -10){
+        const spd = Math.max(0.4, (G.pages+G.level)*0.5 - 0.5);   // m/s
+        _v.set(camera.position.x-slender.position.x,0,camera.position.z-slender.position.z);
+        const dd=_v.length();
+        if (dd>1.4){ _v.normalize();
+          slender.position.x += _v.x*spd*TICK; slender.position.z += _v.z*spd*TICK;
+          slender.rotation.y = Math.atan2(-_v.x,-_v.z);
+        }
+      }
+    } else {
+      // te está mirando y aún es "educado" (pages<6): se queda quieto,
+      // pero muy de vez en cuando desaparece si estás lejos (mightport del original)
+      G.mightport++;
+      if (dist > G.maxrange && G.mightport>120 && Math.random()<0.01){
+        G.mightport=0; tryTeleport(false);
+      }
+    }
+  }
+
+  // Empuja al jugador fuera de una caja orientada (colisión precisa de edificios)
+  function resolveBox(nx,nz,b){
+    const dx=nx-b.x, dz=nz-b.z;
+    const lx = b.cos*dx - b.sin*dz;          // mundo -> local
+    const lz = b.sin*dx + b.cos*dz;
+    const cx = Math.max(-b.hw, Math.min(b.hw, lx));
+    const cz = Math.max(-b.hd, Math.min(b.hd, lz));
+    const ex = lx-cx, ez = lz-cz; const d2 = ex*ex+ez*ez;
+    if (d2 >= PLAYER_R*PLAYER_R) return [nx,nz];
+    let nlx, nlz;
+    if (d2 > 1e-8){ const d=Math.sqrt(d2); nlx = cx + ex/d*PLAYER_R; nlz = cz + ez/d*PLAYER_R; }
+    else { const px=b.hw-Math.abs(lx), pz=b.hd-Math.abs(lz);          // dentro: menor penetración
+      if (px<pz){ nlx=(lx<0?-1:1)*(b.hw+PLAYER_R); nlz=lz; } else { nlx=lx; nlz=(lz<0?-1:1)*(b.hd+PLAYER_R); } }
+    return [ b.x + b.cos*nlx + b.sin*nlz, b.z - b.sin*nlx + b.cos*nlz ];  // local -> mundo
+  }
+
+  // ===================== Movimiento del jugador =====================
+  function moveTick(){
+    let fwd = (keys['w']||keys['arrowup']?1:0) - (keys['s']||keys['arrowdown']?1:0);
+    let str = (keys['d']||keys['arrowright']?1:0) - (keys['a']||keys['arrowleft']?1:0);
+    const moving = (fwd!==0 || str!==0);
+    G.moving = moving;
+
+    // velocidad (SprintScript): andar 3, trote 3.5+páginas*0.1, sprint 8 si asustado
+    let speed = 3;
+    const wantRun = (keys['shift']) && fwd>0;
+    if (wantRun && G.stamina>10){
+      speed = (G.scared>0) ? 8 : (3.5 + G.pages*0.1);
+    }
+    // consumo/recuperación de stamina
+    if (wantRun && G.stamina>10 && moving){
+      G.stamina -= (G.scared>0? 0.14 : (3.5+G.pages*0.1)/105);
+      if (G.stamina<0) G.stamina=0;
+    } else {
+      G.stamina += moving?0.05:0.1; if (G.stamina>G.maxstam) G.stamina=G.maxstam;
+    }
+
+    if (moving){
+      const len=Math.hypot(fwd,str); fwd/=len; str/=len;
+      const sy=Math.sin(G.player_yaw), cy=Math.cos(G.player_yaw);
+      let nx = camera.position.x + (fwd*(-sy) + str*(cy))*speed*TICK;
+      let nz = camera.position.z + (fwd*(-cy) + str*(-sy))*speed*TICK;
+      // límites del mundo
+      nx = Math.max(-WORLD+1, Math.min(WORLD-1, nx));
+      nz = Math.max(-WORLD+1, Math.min(WORLD-1, nz));
+      // colisión con círculos (árboles y estructuras redondas)
+      for(const b of blockers){
+        if (b.nocol) continue;
+        const dx=nx-b.x, dz=nz-b.z; const rr=b.r+PLAYER_R; const dd=Math.hypot(dx,dz);
+        if (dd < rr && dd>0.0001){ nx=b.x+dx/dd*rr; nz=b.z+dz/dd*rr; }
+      }
+      // colisión con cajas (edificios, camioneta, verja)
+      for(const b of solidBoxes){ const res=resolveBox(nx,nz,b); nx=res[0]; nz=res[1]; }
+      camera.position.x=nx; camera.position.z=nz;
+      // pasos
+      G.stepcd -= wantRun?5:4;
+      if (G.stepcd<=0){ G.stepcd=120; footstep(); }
+    } else {
+      G.stepcd = 120;
+    }
+    camera.position.y = EYE;
+  }
+
+  // ===================== Recoger páginas =====================
+  let nearPage = null;
+  function checkPages(){
+    nearPage = null;
+    for(const p of pages){
+      if (p.taken) continue;
+      const d = Math.hypot(camera.position.x-p.x, camera.position.z-p.z);
+      if (d <= 2.2){
+        // ¿la estás mirando?
+        _v.set(p.x-camera.position.x, 0, p.z-camera.position.z).normalize();
+        camera.getWorldDirection(_fwd); _fwd.y=0; _fwd.normalize();
+        if (_fwd.dot(_v) > 0.75){ nearPage = p; break; }
+      }
+    }
+    document.getElementById('hint').style.opacity = nearPage ? '1' : '0';
+  }
+  function pickUpPage(){
+    if (!nearPage) return;
+    nearPage.taken = true; scene.remove(nearPage.mesh); nearPage=null;
+    G.pages++;
+    G.fadeoutgui = 0;
+    G.toolong = 15000;
+    noiseBurst(0.25,'highpass',3500,0.7,0.35);  // papel
+    showPages();
+    if (G.pages < 8){
+      G.targetFog = 0.055 + G.pages*0.006;
+      G.maxrange = 100 - (G.pages+G.level)*11;
+      G.minrange = 80 - (G.pages+G.level)*10;
+    } else {
+      G.targetFog = 0.09;
+      G.maxrange = 20; G.minrange = 10; G.finaldelay = 150;
+      G.won = true; G.endTimer = 0;   // conseguidas las 8: arranca el desenlace
+    }
+    if (G.level>0) G.level--;
+  }
+
+  // ===================== HUD =====================
+  const elPages = document.getElementById('pages');
+  const elBattery = document.getElementById('battery');
+  const elBatteryFill = document.getElementById('batteryFill');
+  function showPages(){
+    elPages.textContent = G.pages===0 ? 'Recoge las 8 páginas' : ('Páginas '+G.pages+'/8');
+    elPages.style.opacity='1';
+    clearTimeout(showPages._t);
+    showPages._t = setTimeout(()=>{ elPages.style.opacity='0'; }, 2600);
+  }
+
+  // ===================== Estática (canvas) + viñeta =====================
+  const sc = document.getElementById('staticCanvas');
+  const sctx = sc.getContext('2d');
+  sc.width = 220; sc.height = 140;
+  const sImg = sctx.createImageData(sc.width, sc.height);
+  let staticAlpha = 0;
+  function renderStatic(){
+    const el = sc;
+    if (staticAlpha < 0.01){ el.style.opacity='0'; return; }
+    const d = sImg.data;
+    for(let i=0;i<d.length;i+=4){ const v=(Math.random()*255)|0; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255; }
+    sctx.putImageData(sImg,0,0);
+    el.style.opacity = Math.min(1, staticAlpha).toFixed(3);
+  }
+
+  // ===================== Bucle de simulación (50 Hz) =====================
+  function tick(){
+    // niebla suave hacia el objetivo
+    if (G.targetFog+0.001 < G.fogDensity) G.fogDensity -= 0.001;
+    else if (G.targetFog-0.0002 > G.fogDensity) G.fogDensity += 0.0002;
+    else G.fogDensity = G.targetFog;
+    scene.fog.density = G.fogDensity;
+
+    // anti-camping: si tardas demasiado, sube el nivel (como recoger media página)
+    if (G.toolong>0 && G.pages<8){
+      G.toolong--;
+      if (G.toolong<=0){ G.toolong=12000;
+        if (G.pages+G.level<9){ G.level++;
+          G.maxrange=100-(G.pages+G.level)*11; G.minrange=80-(G.pages+G.level)*10; }
+      }
+    }
+
+    // Linterna: batería y parpadeo
+    if (G.torchOn){
+      G.battery -= 0.00018;
+      if (G.battery <= 0.05){ G.battery=0; G.torchOn=false; }
+      if (G.battery < 0.25 && Math.random()<0.2) G.torchdying=!G.torchdying;
+    } else G.torchdying=false;
+    const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*3.6 : G.battery*3.6) : 0;
+    torch.intensity += (targetIntensity - torch.intensity)*0.5;
+    elBatteryFill.style.transform = 'scaleX('+Math.max(0,G.battery)+')';
+    elBatteryFill.style.background = G.battery<0.25 ? '#c33' : '#c9c9c9';
+
+    // ¿Ve el jugador a Slender?
+    const cs = computeCanSee();
+    G.cansee = cs.see;
+
+    // Susto al verlo por primera vez
+    if (G.cansee && !G.justsaw && cs.dist < 12 && G.scared<=0 && !G.caught){
+      stinger(); G.flicker=3; G.scared=600; G.stamina=Math.min(G.maxstam,G.stamina+15);
+    }
+    if (G.scared>0) G.scared--;
+
+    // Drenaje de cordura (fórmula del original)
+    if (G.caught){
+      G.sanity -= 1;
+    } else if (G.cansee){
+      const n = cs.dist;
+      const drain = G.torchOn ? Math.pow(2,-n/10) : Math.pow(2,(-n*2)/10);
+      G.sanity -= drain;
+    } else {
+      G.sanity += 0.1;
+    }
+    if (G.sanity>100) G.sanity=100;
+    if (G.sanity<0){ G.sanity=0; if(!G.lost && !G.won) G.lost=true; }
+    G.justsaw = G.cansee;
+
+    // IA de Slender
+    slenderAI();
+
+    // movimiento / pasos / páginas
+    moveTick();
+    checkPages();
+
+    // ---- Estática visual + audio ----
+    if (G.flicker>0){ staticAlpha = 1; G.flicker--; }
+    else { staticAlpha = Math.min(0.85, Math.max(0, 0.28 - G.sanity/360)); }
+    if (staticGain) staticGain.gain.value = staticAlpha*0.25 + (G.flicker>0?0.15:0);
+
+    // viñeta ("tentáculos") crece al bajar la cordura
+    const vig = G.sanity<80 ? (80-G.sanity)/80 : 0;
+    document.getElementById('vignette').style.opacity = (vig*0.9).toFixed(3);
+
+    // latido del corazón, más rápido con menos cordura
+    if (AC){
+      windGain.gain.value = 0.12;
+      G.heartTimer--;
+      if (G.heartTimer<=0 && G.sanity<95){
+        const f = G.sanity/100;                 // 1 = calmado
+        G.heartTimer = Math.round(20 + f*70);   // 0.4s .. 1.8s
+        heartbeat(0.4 + (1-f)*0.9);
+      }
+      // capas de drone según páginas
+      const lvl = G.pages+G.level;
+      for(let i=0;i<droneGains.length;i++){
+        const on = (lvl>i*2) ? (0.06 + (G.won?0.06:0)) : 0;
+        droneGains[i].gain.value += (on - droneGains[i].gain.value)*0.02;
+      }
+    }
+
+    // Modelo de linterna: balanceo al caminar + brillo de la lente
+    if (flashModel){
+      const spd = G.moving ? (keys['shift']?0.42:0.30) : 0.05;
+      G.bob += spd;
+      const amp = G.moving ? 1 : 0.2;
+      flashModel.position.x = FLASH_BASE.x + Math.cos(G.bob)*0.010*amp;
+      flashModel.position.y = FLASH_BASE.y + Math.abs(Math.sin(G.bob))*0.016*amp - 0.004*amp;
+      const on = G.torchOn && torch.intensity>0.05;
+      flashLens.material.color.setHex(on ? (G.torchdying?0x7a5a24:0xffe6b0) : 0x140f07);
+      flashHalo.material.opacity = on ? (G.torchdying?0.25:0.6) : 0;
+      if (flashBeam){ flashBeam.visible = on;
+        flashBeam.material.opacity = on ? (G.torchdying?0.06:0.12) : 0; }
+    }
+
+    // Fin de partida
+    if (G.won) G.endTimer++;                       // cuenta desde la 8ª página
+    if (G.state==='play'){
+      if (G.pages>=8 && (G.caught || G.lost || G.endTimer>320)){ endGame('win'); }
+      else if (G.caught || G.lost){ endGame('dead'); }
+    }
+  }
+
+  // ===================== Fin de partida =====================
+  function endGame(type){
+    if (G.state==='ending') return;
+    G.state='ending';
+    document.exitPointerLock && document.exitPointerLock();
+    // último fotograma: Slender justo delante
+    camera.getWorldDirection(_fwd); _fwd.y=0; _fwd.normalize();
+    slender.position.set(camera.position.x + _fwd.x*1.5, 0, camera.position.z + _fwd.z*1.5);
+    slender.rotation.y = Math.atan2(-_fwd.x,-_fwd.z);
+    staticAlpha = 1; jumpscareSound();
+    document.getElementById('crosshair').style.display='none';
+    elBattery.style.display='none';
+    const fb = document.getElementById('fadeblack');
+    const es = document.getElementById('endScreen');
+
+    if (type==='dead'){
+      setTimeout(()=>{ fb.style.opacity='1'; }, 500);
+      setTimeout(()=>{
+        staticAlpha=0; sc.style.opacity='0';
+        document.getElementById('endTitle').textContent='THE TAPE ENDS THERE.';
+        document.getElementById('endText').innerHTML='Recogiste <b>'+G.pages+'/8</b> páginas antes de que te encontrara.';
+        document.getElementById('restartBtn').textContent='CLIC PARA REINTENTAR';
+        es.style.display='flex'; fb.style.opacity='0';
+      }, 2200);
+      return;
+    }
+
+    // ---- VICTORIA: amanece, se revela el mapa y salen los créditos (como el original) ----
+    setTimeout(()=>{ goDaytime(); staticAlpha=0.55; }, 1300);
+    setTimeout(()=>{ staticAlpha=0; sc.style.opacity='0'; G.dayReveal=true; }, 1900);  // paneo del mapa de día
+    setTimeout(()=>{ fb.style.opacity='1'; }, 8200);                                     // fundido a negro
+    setTimeout(()=>{
+      G.dayReveal=false;
+      document.getElementById('endTitle').textContent='SLENDER';
+      document.getElementById('endText').innerHTML=
+        'THE EIGHT PAGES<br><br>Recogiste las <b>8 páginas</b> y viviste para ver el amanecer.'+
+        '<br><br>—— · ——<br><br>Diseño y programación original<br><b>Mark J. Hadley</b>'+
+        '<br><br>Recreación web · HTML5 · Three.js / WebGL<br><br>Gracias por jugar.';
+      document.getElementById('restartBtn').textContent='CLIC PARA VOLVER A EMPEZAR';
+      es.style.display='flex'; fb.style.opacity='0';
+    }, 9400);
+  }
+
+  // Amanecer: transforma la escena a día para revelar el mapa
+  function goDaytime(){
+    slender.position.set(0,-200,0);
+    if (flashModel) flashModel.visible=false;
+    if (flashBeam) flashBeam.visible=false;
+    if (dust) dust.visible=false;
+    torch.intensity=0; G.torchOn=false;
+    document.getElementById('vignette').style.opacity='0';
+    camera.rotation.x=0.03; G.player_pitch=0.03;
+    scene.background = new THREE.Color(0xa9bccb);
+    scene.fog.color.setHex(0xbccadb); scene.fog.density=0.012;
+    if (skyDome) skyDome.visible=false;
+    hemi.color.setHex(0xcdddf0); hemi.groundColor.setHex(0x70705a); hemi.intensity=1.15;
+    amb.color.setHex(0x9fb0c4); amb.intensity=0.55;
+    moon.intensity=0; sun.intensity=1.5;
+    renderer.toneMappingExposure=1.15;
+  }
+
+  // ===================== Entrada =====================
+  addEventListener('keydown', e=>{
+    const k=e.key.toLowerCase(); keys[k]=true;
+    if (k==='f' && G.state==='play') toggleTorch();
+    if (k==='escape' && G.state==='play') pause();
+    if (k===' ' ) e.preventDefault();
+  });
+  addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+
+  renderer.domElement.addEventListener('mousedown', e=>{
+    if (G.state!=='play') return;
+    if (e.button===0){ pickUpPage(); }
+    if (e.button===2){ toggleTorch(); }
+  });
+  addEventListener('contextmenu', e=> e.preventDefault());
+
+  addEventListener('mousemove', e=>{
+    if (G.state!=='play' || document.pointerLockElement==null) return;
+    G.player_yaw -= e.movementX*0.0022;
+    G.player_pitch -= e.movementY*0.0022;
+    G.player_pitch = Math.max(-1.3, Math.min(1.3, G.player_pitch));
+    camera.rotation.y = G.player_yaw;
+    camera.rotation.x = G.player_pitch;
+  });
+
+  function toggleTorch(){
+    if (G.battery<=0.05 && !G.torchOn) return;
+    G.torchOn = !G.torchOn;
+    noiseBurst(0.05,'highpass',3000,1,0.15);
+  }
+
+  // ===================== Control de estados / pointer lock =====================
+  G.player_yaw = 0; G.player_pitch = 0;
+
+  function startGame(){
+    if (G.state!=='start') return;
+    initAudio();
+    if (AC && AC.state==='suspended') AC.resume();
+    document.getElementById('startScreen').style.display='none';
+    document.getElementById('crosshair').style.display='block';
+    elBattery.style.display='block';
+    camera.position.set(0, EYE, 0);
+    G.torchOn = true;                 // arranca con la linterna encendida
+    G.state='play';
+    renderer.domElement.requestPointerLock();
+    showPages();
+  }
+  function pause(){
+    if (G.state!=='play') return;
+    G.state='pause';
+    document.exitPointerLock && document.exitPointerLock();
+    document.getElementById('pauseScreen').style.display='flex';
+  }
+  function resume(){
+    document.getElementById('pauseScreen').style.display='none';
+    G.state='play';
+    renderer.domElement.requestPointerLock();
+  }
+
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('startScreen').addEventListener('click', startGame);
+  document.getElementById('pauseScreen').addEventListener('click', resume);
+  document.getElementById('restartBtn').addEventListener('click', ()=> location.reload());
+
+  document.addEventListener('pointerlockchange', ()=>{
+    if (document.pointerLockElement==null && G.state==='play'){ pause(); }
+  });
+
+  // ===================== Animaciones visuales (cada fotograma) =====================
+  function updateVisual(dt){
+    elapsed += dt;
+    if (G.dayReveal) camera.rotation.y += dt*0.13;      // paneo lento del mapa al amanecer
+    // nubes a la deriva
+    for(const c of clouds){ c.s.position.x += c.speed*dt; if (c.s.position.x>430) c.s.position.x=-430; }
+    // motas de polvo alrededor del jugador
+    if (dust && G.state==='play'){
+      const p=dust.geometry.attributes.position;
+      for(let i=0;i<DUST_N;i++){ const b=dustBase[i];
+        p.setXYZ(i,
+          camera.position.x + b[0] + Math.sin(elapsed*0.3+i)*0.6,
+          0.3 + ((b[1] + elapsed*0.15) % 5.5),
+          camera.position.z + b[2] + Math.cos(elapsed*0.24+i)*0.6);
+      }
+      p.needsUpdate=true;
+    }
+    // Slender vivo: balanceo de brazos, cabeza ladeada, tentáculos por estrés
+    if (slender.position.y > -10){
+      const sway=Math.sin(elapsed*1.4)*0.06;
+      if (slArms[0]) slArms[0].rotation.x = sway;
+      if (slArms[1]) slArms[1].rotation.x = -sway;
+      if (slHead) slHead.rotation.z = Math.sin(elapsed*0.8)*0.05;
+      const dist = camera.position.distanceTo(slender.position);
+      let stress = Math.max(0, (80 - G.sanity)/80);
+      if (dist < 22) stress = Math.max(stress, (22-dist)/22);
+      if (G.pages>=8) stress = 1;
+      for(let i=0;i<slTentacles.length;i++){ const t=slTentacles[i];
+        const sc = stress*(0.85+0.15*Math.sin(elapsed*3+t.phase));
+        t.pivot.scale.setScalar(Math.max(0.001, sc));
+        t.pivot.rotation.x = t.base.x + Math.sin(elapsed*2.2+t.phase)*0.28*stress;
+        t.pivot.rotation.z = t.base.z + Math.cos(elapsed*2.0+t.phase)*0.28*stress;
+      }
+    }
+  }
+
+  // ===================== Post-procesado: bloom sutil =====================
+  const composer = new THREE.EffectComposer(renderer);
+  composer.addPass(new THREE.RenderPass(scene, camera));
+  const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.5, 0.82);
+  composer.addPass(bloom);
+  composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));   // corrige el color
+
+  // ===================== Bucle de render =====================
+  const clock = new THREE.Clock();
+  let acc=0;
+  function loop(){
+    requestAnimationFrame(loop);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    if (G.state==='play'){
+      acc += dt;
+      let steps=0;
+      while (acc>=TICK && steps<4){ tick(); acc-=TICK; steps++; }
+    }
+    updateVisual(dt);
+    renderStatic();
+    composer.render();
+  }
+  loop();
+
+  addEventListener('resize', ()=>{
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
+    bloom.setSize(innerWidth, innerHeight);
+  });
+
+  })();
+  </script>
+</body>
+</html>
