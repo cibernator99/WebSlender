@@ -521,6 +521,56 @@
   bushes.count=bplaced; bushes.instanceMatrix.needsUpdate=true;
   if (bushes.instanceColor) bushes.instanceColor.needsUpdate=true;
 
+  // ===================== Césped (instanced, ligero) — se revela en el haz de la linterna =====
+  (function(){
+    // textura: matojo de briznas verdes sobre transparente (alphaTest, sin ordenar transparencias)
+    const c=document.createElement('canvas'); c.width=c.height=128;
+    const gx=c.getContext('2d');
+    for(let i=0;i<11;i++){
+      const bx=14+Math.random()*100, w=3+Math.random()*4, h=52+Math.random()*64;
+      const topx=bx+(Math.random()-0.5)*34, topy=128-h;
+      const grd=gx.createLinearGradient(0,128,0,topy);
+      grd.addColorStop(0,'#123009'); grd.addColorStop(1,'#4f9331');
+      gx.fillStyle=grd; gx.beginPath(); gx.moveTo(bx-w,128);
+      gx.quadraticCurveTo((bx+topx)/2-w,(128+topy)/2,topx,topy);
+      gx.quadraticCurveTo((bx+topx)/2+w,(128+topy)/2,bx+w,128);
+      gx.closePath(); gx.fill();
+    }
+    const gtex=new THREE.CanvasTexture(c); gtex.encoding=THREE.sRGBEncoding;
+    // geometría: 2 quads cruzados, base en y=0, normales hacia arriba (captan bien la linterna)
+    const ggeo=new THREE.BufferGeometry();
+    ggeo.setAttribute('position', new THREE.Float32BufferAttribute([
+      -0.5,0,0, 0.5,0,0, 0.5,1,0, -0.5,1,0,
+       0,0,-0.5, 0,0,0.5, 0,1,0.5, 0,1,-0.5], 3));
+    ggeo.setAttribute('uv', new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,1, 0,0,1,0,1,1,0,1], 2));
+    ggeo.setAttribute('normal', new THREE.Float32BufferAttribute([
+      0,1,0, 0,1,0, 0,1,0, 0,1,0,  0,1,0, 0,1,0, 0,1,0, 0,1,0], 3));
+    ggeo.setIndex([0,1,2, 0,2,3,  4,5,6, 4,6,7]);
+    const gmat=new THREE.MeshStandardMaterial({ map:gtex, alphaTest:0.45, side:THREE.DoubleSide,
+      roughness:1, metalness:0 });
+    const NUM_GRASS=5000;
+    const grass=new THREE.InstancedMesh(ggeo, gmat, NUM_GRASS);
+    grass.castShadow=false; grass.receiveShadow=false; grass.frustumCulled=false;
+    let gpl=0, ggu=0;
+    while(gpl<NUM_GRASS && ggu<NUM_GRASS*12){
+      ggu++;
+      const x=(Math.random()*2-1)*(WORLD-4), z=(Math.random()*2-1)*(WORLD-4);
+      let bad=false;
+      for(const b of structBlockers){ if(Math.hypot(x-b.x,z-b.z) < b.r+1.2){ bad=true; break; } }
+      if(bad) continue;
+      const s=0.45+Math.random()*0.7, wd=0.7+Math.random()*0.7;
+      dummy.position.set(x,0,z); dummy.rotation.set(0,Math.random()*6.28,0);
+      dummy.scale.set(wd, s, wd); dummy.updateMatrix();
+      grass.setMatrixAt(gpl, dummy.matrix);
+      const v=0.72+Math.random()*0.5; _c.setRGB(v*0.92, v, v*0.85);
+      grass.setColorAt(gpl, _c);
+      gpl++;
+    }
+    grass.count=gpl; grass.instanceMatrix.needsUpdate=true;
+    if(grass.instanceColor) grass.instanceColor.needsUpdate=true;
+    scene.add(grass);
+  })();
+
   // ===================== Slender =====================
   const slender = new THREE.Group();
   let slHead=null; const slArms=[]; const slTentacles=[];
