@@ -306,10 +306,19 @@
       color: opts.color!=null?opts.color:0xffffff });
   }
 
-  // ===================== Suelo (bosque, PBR) =====================
+  // ===================== Suelo (bosque, MATE) =====================
+  // Phong con especular en negro: sin brillo especular no hay "reflejo" que
+  // siga a la cámara (el suelo PBR reflejaba la luna hacia donde mirabas).
+  const groundMat = (function(){
+    const col = texLoader.load('assets/ground_color.jpg');
+    const nrm = texLoader.load('assets/ground_normal.jpg');
+    col.encoding = THREE.sRGBEncoding;
+    [col,nrm].forEach(t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(55,55); t.anisotropy=8; });
+    return new THREE.MeshPhongMaterial({ map:col, normalMap:nrm, specular:0x000000, shininess:0 });
+  })();
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(WORLD*2+40, WORLD*2+40),
-    pbrMat('ground', 55, 55, {roughness:1})
+    groundMat
   );
   ground.rotation.x = -Math.PI/2;
   ground.receiveShadow = true;
