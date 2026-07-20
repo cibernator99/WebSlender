@@ -154,11 +154,11 @@
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 0.88;   // baja la exposición: negros más profundos, la linterna resalta
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const FOGCOL = new THREE.Color(0x090d15);            // niebla nocturna muy oscura
+  const FOGCOL = new THREE.Color(0x070a11);            // niebla nocturna casi negra (el lejos se funde a oscuro)
   scene.fog = new THREE.FogExp2(FOGCOL.getHex(), G.fogDensity);
 
   const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 900);
@@ -252,19 +252,19 @@
   })();
 
   // --- Iluminación: noche cerrada. Sin linterna apenas ves nada (como el original) ---
-  const hemi = new THREE.HemisphereLight(0x38455d, 0x080b08, 0.16);
+  const hemi = new THREE.HemisphereLight(0x2f3a4d, 0x080b08, 0.10);
   scene.add(hemi);
-  const moon = new THREE.DirectionalLight(0x8ea6cf, 0.22);   // borde tenue de luna en los árboles
+  const moon = new THREE.DirectionalLight(0x7f95bc, 0.12);   // borde tenue de luna en los árboles
   moon.position.copy(MOON_POS);
   scene.add(moon);
-  const amb = new THREE.AmbientLight(0x0d121c, 0.06);
+  const amb = new THREE.AmbientLight(0x0a0e18, 0.04);
   scene.add(amb);
   const sun = new THREE.DirectionalLight(0xfff2d8, 0);       // apagado hasta el amanecer del final
   sun.position.set(70,120,40);
   scene.add(sun);
 
   // Linterna: foco enganchado a la cámara. Penumbra alta = charco de luz suave (como la foto)
-  const torch = new THREE.SpotLight(0xffe7bd, 0, 60, 0.52, 0.8, 1.25);
+  const torch = new THREE.SpotLight(0xffe7bd, 0, 60, 0.50, 0.7, 1.4);
   torch.position.set(0.2,-0.1,0.2);
   torch.castShadow = true;
   torch.shadow.mapSize.set(1024,1024);
@@ -502,7 +502,7 @@
   (function(){
     const suit  = new THREE.MeshStandardMaterial({ color:0x070708, roughness:0.62, metalness:0.0 });
     const shirt = new THREE.MeshStandardMaterial({ color:0xb9b9bd, roughness:0.7 });
-    const skin  = new THREE.MeshStandardMaterial({ color:0xe9e5db, roughness:0.78, emissive:0x24211c, emissiveIntensity:0.75 });
+    const skin  = new THREE.MeshStandardMaterial({ color:0xe9e5db, roughness:0.78, emissive:0x24211c, emissiveIntensity:0.60 });
     // piernas largas
     const legGeo=new THREE.CylinderGeometry(0.085,0.07,1.5,8);
     const ll=new THREE.Mesh(legGeo,suit); ll.position.set(-0.14,0.75,0); slender.add(ll);
@@ -576,7 +576,7 @@
     for(let i=0;i<8;i++){
       const a=mounts[i];
       const mat=new THREE.MeshLambertMaterial({ map:pageTexture(i), side:THREE.DoubleSide,
-        emissive:0x1a1913, emissiveIntensity:0.45 });       // resalta con la linterna, no de lejos
+        emissive:0x1a1913, emissiveIntensity:0.32 });       // resalta con la linterna, no de lejos
       const m=new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.66), mat);
       // desplaza 4 cm en la normal para quedar justo sobre la superficie sin z-fighting
       m.position.set(a.x + Math.sin(a.ry)*0.04, a.y, a.z + Math.cos(a.ry)*0.04);
@@ -976,7 +976,7 @@
       if (G.battery <= 0.05){ G.battery=0; G.torchOn=false; }
       if (G.battery < 0.25 && Math.random()<0.2) G.torchdying=!G.torchdying;
     } else G.torchdying=false;
-    const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*3.6 : G.battery*3.6) : 0;
+    const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*4.2 : G.battery*4.2) : 0;
     torch.intensity += (targetIntensity - torch.intensity)*0.5;
     elBatteryFill.style.transform = 'scaleX('+Math.max(0,G.battery)+')';
     elBatteryFill.style.background = G.battery<0.25 ? '#c33' : '#c9c9c9';
@@ -1118,7 +1118,7 @@
     hemi.color.setHex(0xcdddf0); hemi.groundColor.setHex(0x70705a); hemi.intensity=1.15;
     amb.color.setHex(0x9fb0c4); amb.intensity=0.55;
     moon.intensity=0; sun.intensity=1.5;
-    renderer.toneMappingExposure=1.15;
+    renderer.toneMappingExposure=1.05;
   }
 
   // ===================== Entrada =====================
@@ -1226,9 +1226,12 @@
   }
 
   // ===================== Post-procesado: bloom sutil =====================
-  const composer = new THREE.EffectComposer(renderer);
+  // Buffer HalfFloat: evita el "banding" (bandas) en los degradados casi negros de la noche
+  const composer = new THREE.EffectComposer(renderer,
+    new THREE.WebGLRenderTarget(innerWidth, innerHeight,
+      { minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter, format:THREE.RGBAFormat, type:THREE.HalfFloatType }));
   composer.addPass(new THREE.RenderPass(scene, camera));
-  const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.5, 0.82);
+  const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.4, 0.85);
   composer.addPass(bloom);
   composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));   // corrige el color
 
