@@ -48,31 +48,50 @@ Looking directly at the Slender Man slows his approach… but drains your sanity
 ### Local Play
 
 Modern browsers block local file access (`file://index.html`),
-so the game needs to be served over a local web server.
-Two launcher scripts are included to make this a one-step process.
+so the game needs to be served over a local web server. A tiny launcher,
+`serve.py`, does everything in one step: it picks a free port automatically,
+serves the game folder, and opens it in your default browser.
 
-**Requirements:** Python must be installed. Both scripts pick a free port automatically (starting at 8000).
-Keep the server window/terminal open while playing — closing it stops the server.
+**Requirements:** Python 3.6+ (standard library only — no dependencies to install).
+Keep the launcher window/terminal open while playing; closing it stops the server.
+Press `Ctrl+C` in that window to quit.
 
-#### Windows
-
-Double-click `run.bat`. It starts a local server and opens the game in your browser automatically.
-
-> [!TIP]
-> If Windows SmartScreen blocks `run.bat`, open it in a text editor, copy the contents into a new `.bat` file, and run that instead.
-> Alternatively, run python http server yourself (see below).
-
-#### Linux / macOS
+#### Recommended (any OS)
 
 ```sh
-./run.sh
+python serve.py
 ```
 
-This starts a local server and opens the game in your default browser.
+On some systems the command is `python3 serve.py`.
+
+#### Convenience wrappers
+
+If you prefer not to type a command:
+
+- **Windows:** double-click `run.bat`
+- **Linux / macOS:** run `./run.sh`
+
+Both wrappers simply call `python serve.py`.
+
+> [!NOTE]
+> **Why a `serve.py` instead of doing everything inside `run.bat`?**
+> Antivirus / SmartScreen heuristics tend to flag batch files that scan ports,
+> start a network server, and auto-open a browser — that chain of actions looks
+> like malware even when it is harmless. Moving the logic into a plain Python
+> script run through the trusted `python` interpreter avoids those false
+> positives, and `serve.py` binds only to `127.0.0.1` (localhost, so no firewall
+> prompt) on an OS-assigned free port (no port scanning).
+
+> [!TIP]
+> A `run.bat` **downloaded** from the web still carries Windows' "Mark of the Web"
+> and may be warned about by SmartScreen. Either run `python serve.py` directly,
+> or unblock the file: right-click `run.bat` → **Properties** → check **Unblock**
+> (or run `Unblock-File .\run.bat` in PowerShell). Cloning the repo with `git`
+> does not add that mark at all.
 
 #### Manual (any OS)
 
-If you'd rather skip the scripts, serve the folder yourself:
+If you'd rather skip the launcher entirely, serve the folder yourself:
 
 ```sh
 python -m http.server 8000
@@ -88,8 +107,9 @@ WebSlender/
 ├── three.min.js      # Three.js engine
 ├── libs/             # Post-processing (EffectComposer, UnrealBloomPass, shaders…)
 ├── assets/           # PBR textures (color / normal / roughness)
-├── run.bat           # Local server launcher (Windows)
-├── run.sh            # Local server launcher (Linux / macOS)
+├── serve.py          # Local server launcher (all platforms)
+├── run.bat           # Windows convenience wrapper → serve.py
+├── run.sh            # Linux / macOS convenience wrapper → serve.py
 └── LICENSE           # Full licensing terms
 ```
 

@@ -1,0 +1,6 @@
+# Python bytecode cache generated when running serve.py
+__pycache__/
+*.py[cod]
+
+# Local editor / assistant workspace config
+.claude/
