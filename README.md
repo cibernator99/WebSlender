@@ -7,7 +7,7 @@ rebuilt to run entirely in your web browser using WebGL.
 
 Wander a dark forest at night, collect all 8 pages, and survive — because you are not alone.
 
-> [!INFO]
+> [!NOTE]
 > This is a non-commercial fan project made out of love for the original game.
 > All rights to the Slender concept and the original `Slender: The Eight Pages` belong to Mark Hadley / Parsec Productions (2012).
 > This project is not affiliated with or endorsed by the original author.
