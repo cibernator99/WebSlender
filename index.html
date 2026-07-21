@@ -22,10 +22,13 @@
   #vignette { position:fixed; inset:0; z-index:3; pointer-events:none; opacity:0;
     background:radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(0,0,0,0.55) 62%, rgba(0,0,0,0.97) 100%); }
 
-  /* Viñeta de la linterna: enmarca el haz como una linterna real (centro claro, bordes negros) */
+  /* Viñeta base SIEMPRE presente: oscurecimiento nativo moderado de bordes (mood de terror) */
+  #basevig { position:fixed; inset:0; z-index:2; pointer-events:none;
+    background:radial-gradient(ellipse 78% 88% at 50% 50%, rgba(0,0,0,0) 48%, rgba(0,0,0,0.32) 80%, rgba(0,0,0,0.66) 100%); }
+
+  /* Viñeta de la linterna: enmarca el haz y oscurece MÁS lo de fuera al alumbrar */
   #torchvig { position:fixed; inset:0; z-index:2; pointer-events:none; opacity:0;
-    transition:opacity .3s;
-    background:radial-gradient(ellipse 46% 58% at 50% 55%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.45) 66%, rgba(0,0,0,0.9) 100%); }
+    background:radial-gradient(ellipse 42% 54% at 50% 55%, rgba(0,0,0,0) 28%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.97) 100%); }
 
   #ui { position:fixed; inset:0; z-index:5; pointer-events:none;
     display:flex; align-items:center; justify-content:center; }
@@ -76,6 +79,7 @@
 <body>
   <div id="game"></div>
   <canvas id="staticCanvas"></canvas>
+  <div id="basevig"></div>
   <div id="torchvig"></div>
   <div id="vignette"></div>
   <div class="fadeblack" id="fadeblack"></div>
@@ -1072,6 +1076,7 @@
 
   // ---- Contador de FPS (opcional) ----
   const elTorchVig = document.getElementById('torchvig');
+  let torchVigT = 0;   // 0..1 suavizado para el fundido de la viñeta de linterna
   const elFps = document.getElementById('fps');
   let showFps = false, fpsFrames = 0, fpsLastT = 0;
   const fpsCheck = document.getElementById('fpsCheck');
@@ -1130,8 +1135,10 @@
     } else G.torchdying=false;
     const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*2.5 : G.battery*2.5) : 0;
     torch.intensity += (targetIntensity - torch.intensity)*0.5;
-    // viñeta de linterna: enmarca el haz cuando está encendida (look de linterna real)
-    elTorchVig.style.opacity = (G.torchOn && torch.intensity>0.08) ? '1' : '0';
+    // viñeta de linterna: enmarca el haz y late suave (más terror). Se funde suave.
+    const vigOn = (G.torchOn && torch.intensity>0.08) ? 1 : 0;
+    torchVigT += (vigOn - torchVigT)*0.12;
+    elTorchVig.style.opacity = (torchVigT * (0.9 + 0.1*Math.sin(elapsed*1.1))).toFixed(3);
     elBatteryFill.style.transform = 'scaleX('+Math.max(0,G.battery)+')';
     elBatteryFill.style.background = G.battery<0.25 ? '#c33' : '#c9c9c9';
 
