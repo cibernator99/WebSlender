@@ -132,8 +132,8 @@
   const WORLD = 145;            // límite del mapa (original: 149)
   const EYE = 1.7;
   const PLAYER_R = 0.45;
-  const NUM_TREES = 1200;
-  const NUM_BUSHES = 480;
+  const NUM_TREES = 2800;
+  const NUM_BUSHES = 1100;
 
   // ===================== Estado del juego =====================
   const G = {
@@ -151,7 +151,7 @@
     makejump: 0, mightport: 0, chasing: false, finaldelay: 0, maxdeviation: 4,
     // varios
     flicker: 0, stepcd: 120, laststep: 0, bob: 0, moving: false,
-    targetFog: 0.055, fogDensity: 0.055,
+    targetFog: 0.075, fogDensity: 0.075,
     zoom: 60,
     heartTimer: 0,
     fadeoutgui: 400,
@@ -195,7 +195,7 @@
     g.addColorStop(0.72,'#04060f'); g.addColorStop(1.00,'#070a14');
     x.fillStyle=g; x.fillRect(0,0,1024,512);
     // nubes difusas pintadas en la cúpula (más densas hacia el horizonte)
-    for(let i=0;i<170;i++){
+    for(let i=0;i<240;i++){
       const cx=Math.random()*1024, cy=140+Math.random()*300;
       const rr=40+Math.random()*130;
       const a=0.02+Math.random()*0.05;
@@ -258,7 +258,7 @@
       gr.addColorStop(0,'rgba(34,40,52,0.5)'); gr.addColorStop(1,'rgba(34,40,52,0)');
       x.fillStyle=gr; x.beginPath(); x.arc(cx,cy,rr,0,7); x.fill(); }
     const ct=new THREE.CanvasTexture(c);
-    for(let i=0;i<9;i++){
+    for(let i=0;i<18;i++){
       const s=new THREE.Sprite(new THREE.SpriteMaterial({map:ct, fog:false, depthWrite:false,
         transparent:true, opacity:0.12+Math.random()*0.13}));
       const sc=90+Math.random()*130; s.scale.set(sc,sc*0.5,1);
@@ -548,7 +548,7 @@
     ggeo.setIndex([0,1,2, 0,2,3,  4,5,6, 4,6,7]);
     const gmat=new THREE.MeshStandardMaterial({ map:gtex, alphaTest:0.45, side:THREE.DoubleSide,
       roughness:1, metalness:0 });
-    const NUM_GRASS=5000;
+    const NUM_GRASS=10000;
     const grass=new THREE.InstancedMesh(ggeo, gmat, NUM_GRASS);
     grass.castShadow=false; grass.receiveShadow=false; grass.frustumCulled=false;
     let gpl=0, ggu=0;
@@ -1025,7 +1025,7 @@
     noiseBurst(0.25,'highpass',3500,0.7,0.35);  // papel
     showPages();
     if (G.pages < 8){
-      G.targetFog = 0.055 + G.pages*0.006;
+      G.targetFog = 0.075 + G.pages*0.006;
       G.maxrange = 100 - (G.pages+G.level)*11;
       G.minrange = 80 - (G.pages+G.level)*10;
     } else {
