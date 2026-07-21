@@ -709,7 +709,7 @@
 
   // Motas de polvo: SOLO se encienden dentro del haz de la linterna (shader propio;
   // los Points normales no reaccionan a la luz). Cada mota mira si cae en el cono.
-  let dust=null, dustMat=null; const DUST_N=150; const dustBase=[];
+  let dust=null, dustMat=null; const DUST_N=340; const dustBase=[];
   (function(){
     const pos=new Float32Array(DUST_N*3), seed=new Float32Array(DUST_N);
     for(let i=0;i<DUST_N;i++){ const x=(Math.random()-0.5)*22, y=Math.random()*5.5, z=(Math.random()-0.5)*22;
@@ -733,7 +733,8 @@
         "  vec3 dir = to / max(d,0.0001);\n"+
         "  float cone = smoothstep(uConeCos, mix(uConeCos,1.0,0.45), dot(dir,uTorchDir));\n"+
         "  float atten = clamp(1.0 - d/uRange, 0.0, 1.0);\n"+
-        "  vBright = uTorchOn * cone * atten * atten;\n"+
+        "  float hfade = smoothstep(0.5,1.5,wp.y) * (1.0 - smoothstep(4.6,5.3,wp.y));\n"+
+        "  vBright = uTorchOn * cone * atten * atten * hfade;\n"+
         "  vec4 mv = viewMatrix * wp;\n"+
         "  gl_Position = projectionMatrix * mv;\n"+
         "  gl_PointSize = clamp(uSize/max(-mv.z,1.0) * (0.7+seed*0.6), 1.0, 7.0);\n"+
@@ -745,7 +746,7 @@
         "  vec2 c = gl_PointCoord - vec2(0.5); float r = length(c);\n"+
         "  if (r > 0.5) discard;\n"+
         "  float soft = 1.0 - smoothstep(0.1, 0.5, r);\n"+
-        "  gl_FragColor = vec4(vec3(0.85,0.87,0.92), vBright * soft * 0.85);\n"+
+        "  gl_FragColor = vec4(vec3(0.82,0.85,0.92), vBright * soft * 0.55);\n"+
         "}"
     });
     dust=new THREE.Points(g, dustMat);
@@ -1328,7 +1329,7 @@
       for(let i=0;i<DUST_N;i++){ const b=dustBase[i];
         p.setXYZ(i,
           camera.position.x + b[0] + Math.sin(elapsed*0.3+i)*0.6,
-          0.3 + ((b[1] + elapsed*0.15) % 5.5),
+          0.7 + ((b[1] + elapsed*0.12) % 4.6),
           camera.position.z + b[2] + Math.cos(elapsed*0.24+i)*0.6);
       }
       p.needsUpdate=true;
