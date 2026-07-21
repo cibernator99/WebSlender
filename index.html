@@ -139,7 +139,7 @@
   const EYE = 1.7;
   const PLAYER_R = 0.45;
   const NUM_TREES = 2800;
-  const NUM_BUSHES = 1100;
+  const NUM_BUSHES = 2400;
 
   // ===================== Estado del juego =====================
   const G = {
@@ -576,7 +576,7 @@
     ggeo.setIndex([0,1,2, 0,2,3,  4,5,6, 4,6,7]);
     const gmat=new THREE.MeshPhongMaterial({ map:gtex, alphaTest:0.45, side:THREE.DoubleSide,
       specular:0x000000, shininess:0 });
-    const NUM_GRASS=10000;
+    const NUM_GRASS=15000;
     const grass=new THREE.InstancedMesh(ggeo, gmat, NUM_GRASS);
     grass.castShadow=false; grass.receiveShadow=false; grass.frustumCulled=false;
     let gpl=0, ggu=0;
