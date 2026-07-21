@@ -105,9 +105,8 @@ Then open [http://localhost:8000/index.html](http://localhost:8000/index.html) i
 WebSlender/
 ├── index.html        # Game entry point (HTML/CSS/JS)
 ├── three.min.js      # Three.js engine
-├── libs/             # Post-processing (EffectComposer, UnrealBloomPass…) + GLTFLoader
+├── libs/             # Post-processing (EffectComposer, UnrealBloomPass, shaders…)
 ├── assets/           # PBR textures (color / normal / roughness)
-├── models/           # Low-poly 3D models (pine canopy)
 ├── serve.py          # Local server launcher (all platforms)
 ├── run.bat           # Windows convenience wrapper → serve.py
 ├── run.sh            # Linux / macOS convenience wrapper → serve.py
@@ -119,7 +118,6 @@ WebSlender/
 * Original game: Slender: The Eight Pages by Mark Hadley (Parsec Productions)
 * Web remake (WebSlender): fan project by cibernator and the community who wants to help with it
 * Engine: Three.js
-* Pine tree model: Quaternius (Public Domain / CC0) — https://poly.pizza/m/gX8WmgkeEm
 
 This project is completely free and open for anyone who wants to play, learn from, or support it. If you enjoy it, please support the original creator first. 💛
 

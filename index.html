@@ -126,7 +126,6 @@
   </div>
 
   <script src="three.min.js"></script>
-  <script src="libs/GLTFLoader.js"></script>
   <!-- post-procesado (bloom) — ejemplos legacy de Three.js r128 -->
   <script src="libs/CopyShader.js"></script>
   <script src="libs/LuminosityHighPassShader.js"></script>
@@ -542,7 +541,6 @@
   function tClose(x,z){ const gx=Math.floor(x/CS), gz=Math.floor(z/CS);
     for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){ const arr=tgrid.get((gx+a)+','+(gz+b)); if(!arr) continue;
       for(const p of arr) if((x-p[0])*(x-p[0])+(z-p[1])*(z-p[1]) < CS*CS) return true; } return false; }
-  const treeData=[];                 // {x,z,s,ry} por árbol, para colocar la copa externa
   let placed=0, guard=0;
   while (placed<NUM_TREES && guard<NUM_TREES*30){
     guard++;
@@ -559,45 +557,12 @@
     dummy.position.set(x,7.1*s,z); dummy.scale.set(s*0.78,s,s*0.78); dummy.updateMatrix(); foliageHi.setMatrixAt(placed,dummy.matrix);
     const tint=0.72+Math.random()*0.55; _c.setRGB(0.16*tint,0.30*tint,0.13*tint);
     foliageLo.setColorAt(placed,_c); foliageMd.setColorAt(placed,_c); foliageHi.setColorAt(placed,_c);
-    treeData.push({x,z,s,ry});
     blockers.push({x,z,r:0.35*s});
     const k=tkey(x,z); let arr=tgrid.get(k); if(!arr){arr=[];tgrid.set(k,arr);} arr.push([x,z]);
     placed++;
   }
   [trunks,foliageLo,foliageMd,foliageHi].forEach(m=>{ m.count=placed; m.instanceMatrix.needsUpdate=true; });
   [foliageLo,foliageMd,foliageHi].forEach(m=>{ if(m.instanceColor) m.instanceColor.needsUpdate=true; });
-
-  // Copa REAL: modelo externo low-poly (Quaternius pine, CC0) sobre TU tronco de corteza.
-  // Carga asíncrona; si falla, se quedan los conos como fallback (no se rompe nada).
-  (function(){
-    if (!THREE.GLTFLoader) return;
-    new THREE.GLTFLoader().load('models/pine.glb', function(gltf){
-      let src=null;
-      gltf.scene.traverse(o=>{ if(o.isMesh && o.material && /green|leaf|foli/i.test(o.material.name||'')) src=o; });
-      if(!src) gltf.scene.traverse(o=>{ if(o.isMesh && !src) src=o; });   // fallback: 1er mesh
-      if(!src) return;
-      src.updateWorldMatrix(true,false);
-      const geo = src.geometry.clone();
-      geo.applyMatrix4(src.matrixWorld);          // hornea escala del nodo (x100)
-      geo.rotateX(-Math.PI/2);                     // el modelo viene Z-up -> lo paro a Y-up
-      if(!geo.attributes.normal) geo.computeVertexNormals();
-      geo.computeBoundingBox(); const bb=geo.boundingBox; const H=(bb.max.y-bb.min.y)||1;
-      geo.translate(-(bb.min.x+bb.max.x)/2, -bb.min.y, -(bb.min.z+bb.max.z)/2);  // base y=0, centrado
-      geo.scale(1/H,1/H,1/H);                       // normaliza a 1 de alto
-      const canopy = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({color:0xffffff}), placed);
-      canopy.castShadow=false; canopy.receiveShadow=false; canopy.frustumCulled=false;
-      const d=new THREE.Object3D(), col=new THREE.Color();
-      for(let i=0;i<placed;i++){ const t=treeData[i]; const th=5.4*t.s;   // alto de la copa
-        d.position.set(t.x, 2.4*t.s, t.z); d.rotation.set(0,t.ry,0); d.scale.set(th,th,th); d.updateMatrix();
-        canopy.setMatrixAt(i, d.matrix);
-        const tint=0.7+Math.random()*0.55; col.setRGB(0.15*tint,0.28*tint,0.12*tint);
-        canopy.setColorAt(i, col);
-      }
-      canopy.instanceMatrix.needsUpdate=true; if(canopy.instanceColor) canopy.instanceColor.needsUpdate=true;
-      scene.add(canopy);
-      [foliageLo,foliageMd,foliageHi].forEach(m=>scene.remove(m));   // fuera los conos
-    }, undefined, function(err){ console.warn('pine.glb no cargó; me quedo con los conos.', err); });
-  })();
 
   // --- Arbustos / maleza (rellena el suelo, ayuda a esconder a Slender) ---
   let bplaced=0, bguard=0;
