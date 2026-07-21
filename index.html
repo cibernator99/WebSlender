@@ -1097,6 +1097,7 @@
   // ---- Contador de FPS (opcional) ----
   const elTorchVig = document.getElementById('torchvig');
   const elOffDim = document.getElementById('offdim');
+  const elVignette = document.getElementById('vignette');
   let torchVigT = 0;   // 0..1 suavizado para el fundido de la viñeta de linterna
   const elFps = document.getElementById('fps');
   let showFps = false, fpsFrames = 0, fpsLastT = 0;
@@ -1123,12 +1124,20 @@
   const sImg = sctx.createImageData(sc.width, sc.height);
   let staticAlpha = 0;
   function renderStatic(){
-    const el = sc;
-    if (staticAlpha < 0.01){ el.style.opacity='0'; return; }
-    const d = sImg.data;
-    for(let i=0;i<d.length;i+=4){ const v=(Math.random()*255)|0; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255; }
+    if (staticAlpha < 0.01){ sc.style.opacity='0'; return; }
+    const d = sImg.data, W=sc.width, H=sc.height; let i=0;
+    for(let y=0;y<H;y++){
+      // bandas VHS: brillo base por fila + alguna línea de tracking blanca
+      const rowBias = (Math.random()*45)|0;
+      const track = (Math.random()<0.02) ? 150 : 0;
+      for(let x=0;x<W;x++,i+=4){
+        let v = ((Math.random()*190)|0) + rowBias + track;
+        if (v>255) v=255;
+        d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+      }
+    }
     sctx.putImageData(sImg,0,0);
-    el.style.opacity = Math.min(1, staticAlpha).toFixed(3);
+    sc.style.opacity = Math.min(1, staticAlpha).toFixed(3);
   }
 
   // ===================== Bucle de simulación (50 Hz) =====================
@@ -1172,8 +1181,14 @@
     // Susto al verlo por primera vez
     if (G.cansee && !G.justsaw && cs.dist < 12 && G.scared<=0 && !G.caught){
       stinger(); G.flicker=3; G.scared=600; G.stamina=Math.min(G.maxstam,G.stamina+15);
+      G.shake=1; G.vigSnap=0.9;              // susto: temblor + viñeta cerrándose de golpe
     }
     if (G.scared>0) G.scared--;
+    // el temblor y la viñeta también reaccionan cuando acecha muy de cerca
+    G.shake *= 0.9; G.vigSnap *= 0.92;
+    { const sd = camera.position.distanceTo(slender.position);
+      if (slender.position.y>-10 && sd<9){ const near=(9-sd)/9;
+        G.shake = Math.max(G.shake, near*0.7); G.vigSnap = Math.max(G.vigSnap, near*0.8); } }
 
     // Drenaje de cordura (fórmula del original)
     if (G.caught){
@@ -1202,8 +1217,8 @@
     if (staticGain) staticGain.gain.value = staticAlpha*0.25 + (G.flicker>0?0.15:0);
 
     // viñeta ("tentáculos") crece al bajar la cordura
-    const vig = G.sanity<80 ? (80-G.sanity)/80 : 0;
-    document.getElementById('vignette').style.opacity = (vig*0.9).toFixed(3);
+    const vig = Math.max((G.sanity<80 ? (80-G.sanity)/80 : 0), G.vigSnap);
+    elVignette.style.opacity = (vig*0.92).toFixed(3);
 
     // latido del corazón, más rápido con menos cordura
     if (AC){
@@ -1351,6 +1366,7 @@
     elBattery.style.display='block';
     camera.position.set(0, EYE, 0);
     G.curX=0; G.curZ=0; G.prvX=0; G.prvZ=0;   // estado para interpolar el render
+    G.shake=0; G.vigSnap=0;                    // estado del susto (temblor / viñeta)
     G.torchOn = true;                 // arranca con la linterna encendida
     G.state='play';
     renderer.domElement.requestPointerLock();
@@ -1383,6 +1399,13 @@
   function updateVisual(dt){
     elapsed += dt;
     if (grassTime) grassTime.value = elapsed;            // avanza el viento del césped
+    // temblor de cámara del susto (se aplica sobre el yaw/pitch del ratón)
+    if (G.state==='play'){
+      const s = (G.shake>0.002) ? G.shake*0.05 : 0;
+      camera.rotation.x = G.player_pitch + (s?(Math.random()-0.5)*s:0);
+      camera.rotation.y = G.player_yaw  + (s?(Math.random()-0.5)*s:0);
+      camera.rotation.z = s?(Math.random()-0.5)*s*0.6:0;
+    }
     if (G.dayReveal) camera.rotation.y += dt*0.13;      // paneo lento del mapa al amanecer
     // nubes a la deriva
     for(const c of clouds){ c.s.position.x += c.speed*dt; if (c.s.position.x>430) c.s.position.x=-430; }
