@@ -184,7 +184,7 @@
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const FOGCOL = new THREE.Color(0x0a1018);            // niebla nocturna visible (el lejos se funde en bruma azulada)
+  const FOGCOL = new THREE.Color(0x06090f);            // niebla nocturna oscura (bruma visible pero de noche, no clara)
   scene.fog = new THREE.FogExp2(FOGCOL.getHex(), G.fogDensity);
 
   const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 900);
@@ -289,9 +289,9 @@
     x.fillStyle=g; x.fillRect(0,0,128,128);
     const tex=new THREE.CanvasTexture(c);
     for(let i=0;i<34;i++){
-      const base=0.05+Math.random()*0.07;
+      const base=0.04+Math.random()*0.055;
       const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, fog:false, depthWrite:false,
-        transparent:true, opacity:base, color:0x2a3746}));
+        transparent:true, opacity:base, color:0x1e2835}));
       const sc=16+Math.random()*30; s.scale.set(sc, sc*0.42, 1);
       s.position.y = 0.6+Math.random()*2.6;
       fogBank.push({ s, base, bx:(Math.random()*2-1)*46, bz:(Math.random()*2-1)*46, sp:0.6+Math.random()*1.6 });
