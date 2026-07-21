@@ -553,6 +553,7 @@
   bushes.count=bplaced; bushes.instanceMatrix.needsUpdate=true;
   if (bushes.instanceColor) bushes.instanceColor.needsUpdate=true;
 
+  let grassTime = null;   // uniform de tiempo para el viento del césped
   // ===================== Césped (instanced, ligero) — se revela en el haz de la linterna =====
   (function(){
     // textura: matojo de briznas verdes sobre transparente (alphaTest, sin ordenar transparencias)
@@ -580,6 +581,20 @@
     ggeo.setIndex([0,1,2, 0,2,3,  4,5,6, 4,6,7]);
     const gmat=new THREE.MeshPhongMaterial({ map:gtex, alphaTest:0.45, side:THREE.DoubleSide,
       specular:0x000000, shininess:0 });
+    // viento: la punta (position.y=1) se mece; la base (y=0) queda plantada. Fase por instancia.
+    gmat.onBeforeCompile = (shader)=>{
+      shader.uniforms.uWind = { value: 0 };
+      grassTime = shader.uniforms.uWind;
+      shader.vertexShader = 'uniform float uWind;\n' + shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n'+
+        '  vec3 ipos = instanceMatrix[3].xyz;\n'+
+        '  float ph = ipos.x*0.25 + ipos.z*0.25;\n'+
+        '  float sway = sin(uWind*1.4 + ph)*0.11 + sin(uWind*2.6 + ph*1.7)*0.045;\n'+
+        '  transformed.x += sway * position.y;\n'+
+        '  transformed.z += cos(uWind*1.1 + ph)*0.08 * position.y;\n'
+      );
+    };
     const NUM_GRASS=15000;
     const grass=new THREE.InstancedMesh(ggeo, gmat, NUM_GRASS);
     grass.castShadow=false; grass.receiveShadow=false; grass.frustumCulled=false;
@@ -1358,6 +1373,7 @@
   // ===================== Animaciones visuales (cada fotograma) =====================
   function updateVisual(dt){
     elapsed += dt;
+    if (grassTime) grassTime.value = elapsed;            // avanza el viento del césped
     if (G.dayReveal) camera.rotation.y += dt*0.13;      // paneo lento del mapa al amanecer
     // nubes a la deriva
     for(const c of clouds){ c.s.position.x += c.speed*dt; if (c.s.position.x>430) c.s.position.x=-430; }
