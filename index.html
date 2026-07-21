@@ -180,7 +180,7 @@
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const FOGCOL = new THREE.Color(0x020308);            // niebla nocturna casi negra (el lejos se funde a oscuro)
+  const FOGCOL = new THREE.Color(0x0a1018);            // niebla nocturna visible (el lejos se funde en bruma azulada)
   scene.fog = new THREE.FogExp2(FOGCOL.getHex(), G.fogDensity);
 
   const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 900);
@@ -270,6 +270,28 @@
       const sc=90+Math.random()*130; s.scale.set(sc,sc*0.5,1);
       s.position.set((Math.random()*2-1)*380, 120+Math.random()*90, (Math.random()*2-1)*380);
       scene.add(s); clouds.push({s, speed:2+Math.random()*4});
+    }
+  })();
+
+  // --- Banco de niebla bajo (misma técnica de sprites que las nubes, pero a ras de suelo) ---
+  // Da niebla real/volumétrica que rodea al jugador; se intensifica con la linterna.
+  const fogBank=[];
+  (function(){
+    const c=document.createElement('canvas'); c.width=c.height=128;
+    const x=c.getContext('2d');
+    const g=x.createRadialGradient(64,64,4,64,64,64);
+    g.addColorStop(0,'rgba(160,175,200,0.6)'); g.addColorStop(0.6,'rgba(150,165,190,0.22)');
+    g.addColorStop(1,'rgba(150,165,190,0)');
+    x.fillStyle=g; x.fillRect(0,0,128,128);
+    const tex=new THREE.CanvasTexture(c);
+    for(let i=0;i<34;i++){
+      const base=0.05+Math.random()*0.07;
+      const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, fog:false, depthWrite:false,
+        transparent:true, opacity:base, color:0x2a3746}));
+      const sc=16+Math.random()*30; s.scale.set(sc, sc*0.42, 1);
+      s.position.y = 0.6+Math.random()*2.6;
+      fogBank.push({ s, base, bx:(Math.random()*2-1)*46, bz:(Math.random()*2-1)*46, sp:0.6+Math.random()*1.6 });
+      scene.add(s);
     }
   })();
 
@@ -1332,6 +1354,16 @@
     if (G.dayReveal) camera.rotation.y += dt*0.13;      // paneo lento del mapa al amanecer
     // nubes a la deriva
     for(const c of clouds){ c.s.position.x += c.speed*dt; if (c.s.position.x>430) c.s.position.x=-430; }
+    // banco de niebla: rodea al jugador, deriva suave y se intensifica al alumbrar
+    if (fogBank.length){
+      const lit = (G.torchOn && torch.intensity>0.08) ? 1.7 : 1.0;
+      for(const f of fogBank){
+        f.bx += f.sp*dt*0.5; if (f.bx>48) f.bx-=96;
+        f.s.position.x = camera.position.x + f.bx;
+        f.s.position.z = camera.position.z + f.bz;
+        f.s.material.opacity += (f.base*lit - f.s.material.opacity)*0.05;
+      }
+    }
     // motas de polvo alrededor del jugador
     if (dust && G.state==='play'){
       const p=dust.geometry.attributes.position;
