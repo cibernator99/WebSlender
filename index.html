@@ -368,9 +368,12 @@
   // --- Árboles: pino por capas (tronco + 3 conos), instanciado ---
   const trunkGeo = new THREE.CylinderGeometry(0.14, 0.34, 5.4, 8);
   const trunkMat = pbrMat('bark', 1.4, 3, {roughness:0.95});
-  const foliageLoGeo = new THREE.ConeGeometry(2.2, 3.0, 8);
-  const foliageMdGeo = new THREE.ConeGeometry(1.75, 2.8, 8);
-  const foliageHiGeo = new THREE.ConeGeometry(1.2, 2.6, 8);
+  // Copa de pino low-poly con CARAS PLANAS: no-indexada + normales recalculadas = facetas
+  // crujientes (deja de parecer un arbusto liso; se ve como pino stylized).
+  function pineTier(r,h,seg){ const g=new THREE.ConeGeometry(r,h,seg).toNonIndexed(); g.computeVertexNormals(); return g; }
+  const foliageLoGeo = pineTier(2.5, 3.3, 7);
+  const foliageMdGeo = pineTier(1.95, 3.1, 7);
+  const foliageHiGeo = pineTier(1.25, 3.0, 6);
   const foliageMat = new THREE.MeshLambertMaterial({ color:0xffffff });  // color real vía instanceColor
   const trunks    = new THREE.InstancedMesh(trunkGeo, trunkMat, NUM_TREES);
   const foliageLo = new THREE.InstancedMesh(foliageLoGeo, foliageMat, NUM_TREES);
