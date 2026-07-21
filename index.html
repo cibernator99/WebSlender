@@ -170,7 +170,7 @@
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.88;   // baja la exposición: negros más profundos, la linterna resalta
+  renderer.toneMappingExposure = 0.85;   // baja la exposición: negros más profundos, la linterna resalta
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -268,9 +268,9 @@
   })();
 
   // --- Iluminación: noche cerrada. Sin linterna apenas ves nada (como el original) ---
-  const hemi = new THREE.HemisphereLight(0x2f3a4d, 0x0a0e14, 0.035);
+  const hemi = new THREE.HemisphereLight(0x2f3a4d, 0x0a0e14, 0.03);
   scene.add(hemi);
-  const moon = new THREE.DirectionalLight(0x7f95bc, 0.05);   // borde tenue de luna en los árboles
+  const moon = new THREE.DirectionalLight(0x7f95bc, 0.04);   // borde tenue de luna en los árboles
   moon.position.copy(MOON_POS);
   scene.add(moon);
   const amb = new THREE.AmbientLight(0x0a0e18, 0.02);
@@ -280,12 +280,12 @@
   scene.add(sun);
 
   // Linterna: foco enganchado a la cámara. Penumbra alta = charco de luz suave (como la foto)
-  const torch = new THREE.SpotLight(0xffe7bd, 0, 50, 0.48, 0.85, 1.6);
+  const torch = new THREE.SpotLight(0xffe7bd, 0, 58, 0.42, 0.5, 1.4);
   torch.position.set(0.2,-0.1,0.2);
   torch.castShadow = true;
   torch.shadow.mapSize.set(1024,1024);
   torch.shadow.camera.near = 0.5;
-  torch.shadow.camera.far = 48;
+  torch.shadow.camera.far = 56;
   torch.shadow.bias = -0.0007;
   camera.add(torch);
   camera.add(torch.target);
@@ -546,8 +546,8 @@
     ggeo.setAttribute('normal', new THREE.Float32BufferAttribute([
       0,1,0, 0,1,0, 0,1,0, 0,1,0,  0,1,0, 0,1,0, 0,1,0, 0,1,0], 3));
     ggeo.setIndex([0,1,2, 0,2,3,  4,5,6, 4,6,7]);
-    const gmat=new THREE.MeshStandardMaterial({ map:gtex, alphaTest:0.45, side:THREE.DoubleSide,
-      roughness:1, metalness:0 });
+    const gmat=new THREE.MeshPhongMaterial({ map:gtex, alphaTest:0.45, side:THREE.DoubleSide,
+      specular:0x000000, shininess:0 });
     const NUM_GRASS=10000;
     const grass=new THREE.InstancedMesh(ggeo, gmat, NUM_GRASS);
     grass.castShadow=false; grass.receiveShadow=false; grass.frustumCulled=false;
@@ -721,7 +721,7 @@
       transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
       uniforms:{
         uTorchPos:{value:new THREE.Vector3()}, uTorchDir:{value:new THREE.Vector3(0,0,-1)},
-        uTorchOn:{value:0}, uConeCos:{value:Math.cos(0.55)}, uRange:{value:16.0}, uSize:{value:12.0}
+        uTorchOn:{value:0}, uConeCos:{value:Math.cos(0.50)}, uRange:{value:16.0}, uSize:{value:12.0}
       },
       vertexShader:
         "uniform vec3 uTorchPos; uniform vec3 uTorchDir; uniform float uTorchOn;\n"+
@@ -1098,7 +1098,7 @@
       if (G.battery <= 0.05){ G.battery=0; G.torchOn=false; }
       if (G.battery < 0.25 && Math.random()<0.2) G.torchdying=!G.torchdying;
     } else G.torchdying=false;
-    const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*3.2 : G.battery*3.2) : 0;
+    const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*2.5 : G.battery*2.5) : 0;
     torch.intensity += (targetIntensity - torch.intensity)*0.5;
     elBatteryFill.style.transform = 'scaleX('+Math.max(0,G.battery)+')';
     elBatteryFill.style.background = G.battery<0.25 ? '#c33' : '#c9c9c9';
@@ -1335,7 +1335,7 @@
       // pasa el cono de la linterna al shader del polvo (solo brilla dentro del haz)
       camera.getWorldPosition(dustMat.uniforms.uTorchPos.value);
       camera.getWorldDirection(dustMat.uniforms.uTorchDir.value);
-      dustMat.uniforms.uTorchOn.value = Math.min(1, torch.intensity/2.4);
+      dustMat.uniforms.uTorchOn.value = Math.min(1, torch.intensity/1.9);
     }
     // Slender vivo: balanceo de brazos, cabeza ladeada, tentáculos por estrés
     if (slender.position.y > -10){
