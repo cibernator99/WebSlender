@@ -30,6 +30,10 @@
   #torchvig { position:fixed; inset:0; z-index:2; pointer-events:none; opacity:0;
     background:radial-gradient(ellipse 42% 54% at 50% 55%, rgba(0,0,0,0) 28%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.97) 100%); }
 
+  /* Sin linterna: penumbra general (todo se oscurece cuando NO alumbras; se quita al encender) */
+  #offdim { position:fixed; inset:0; z-index:2; pointer-events:none; opacity:0;
+    background:radial-gradient(ellipse 82% 92% at 50% 52%, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.55) 66%, rgba(0,0,0,0.72) 100%); }
+
   #ui { position:fixed; inset:0; z-index:5; pointer-events:none;
     display:flex; align-items:center; justify-content:center; }
 
@@ -80,6 +84,7 @@
   <div id="game"></div>
   <canvas id="staticCanvas"></canvas>
   <div id="basevig"></div>
+  <div id="offdim"></div>
   <div id="torchvig"></div>
   <div id="vignette"></div>
   <div class="fadeblack" id="fadeblack"></div>
@@ -1091,6 +1096,7 @@
 
   // ---- Contador de FPS (opcional) ----
   const elTorchVig = document.getElementById('torchvig');
+  const elOffDim = document.getElementById('offdim');
   let torchVigT = 0;   // 0..1 suavizado para el fundido de la viñeta de linterna
   const elFps = document.getElementById('fps');
   let showFps = false, fpsFrames = 0, fpsLastT = 0;
@@ -1154,6 +1160,8 @@
     const vigOn = (G.torchOn && torch.intensity>0.08) ? 1 : 0;
     torchVigT += (vigOn - torchVigT)*0.12;
     elTorchVig.style.opacity = (torchVigT * (0.9 + 0.1*Math.sin(elapsed*1.1))).toFixed(3);
+    // sin linterna: penumbra general (inverso a la linterna) -> apagada = oscuro, no más claro
+    elOffDim.style.opacity = (1 - torchVigT).toFixed(3);
     elBatteryFill.style.transform = 'scaleX('+Math.max(0,G.battery)+')';
     elBatteryFill.style.background = G.battery<0.25 ? '#c33' : '#c9c9c9';
 
@@ -1289,6 +1297,7 @@
     if (dust) dust.visible=false;
     torch.intensity=0; G.torchOn=false;
     document.getElementById('vignette').style.opacity='0';
+    elOffDim.style.opacity='0'; elTorchVig.style.opacity='0';   // amanecer: sin penumbra ni viñeta
     camera.rotation.x=0.03; G.player_pitch=0.03;
     scene.background = new THREE.Color(0xa9bccb);
     scene.fog.color.setHex(0xbccadb); scene.fog.density=0.012;
