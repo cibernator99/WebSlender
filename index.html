@@ -76,6 +76,10 @@
   #endScreen { display:none; background:#000; }
   #endScreen h1 { font-size:34px; letter-spacing:6px; }
   #pauseScreen { display:none; background:rgba(0,0,0,.85); }
+  #loadBarWrap { margin-top:34px; width:340px; max-width:70vw; height:10px;
+    border:1px solid #555; border-radius:5px; overflow:hidden; }
+  #loadBar { height:100%; width:0%; background:#cfcfcf; transition:width .25s; }
+  #loadPct { margin-top:14px; color:#9a9a9a; font-size:13px; letter-spacing:2px; }
   .fadeblack { position:absolute; inset:0; background:#000; z-index:7; opacity:0;
     pointer-events:none; transition:opacity 1.2s; }
 </style>
@@ -109,7 +113,14 @@
       </div>
       <label class="opt" id="fpsToggle"><input type="checkbox" id="fpsCheck"> Mostrar FPS</label>
       <div class="go" id="startBtn">CLIC PARA EMPEZAR</div>
-      <div class="small">Recreación técnica del open source · Three.js · audio sintetizado en tiempo real</div>
+      <div class="small">Recreación del open source · Three.js · mapa, sonidos y modelos fieles al original</div>
+    </div>
+
+    <div class="screen" id="loadingScreen">
+      <h1>SLENDER</h1>
+      <h2>THE EIGHT PAGES · WEB</h2>
+      <div id="loadBarWrap"><div id="loadBar"></div></div>
+      <div id="loadPct">Cargando el bosque… 0%</div>
     </div>
 
     <div class="screen" id="pauseScreen">
@@ -135,6 +146,9 @@
   <script src="libs/MaskPass.js"></script>
   <script src="libs/RenderPass.js"></script>
   <script src="libs/UnrealBloomPass.js"></script>
+  <!-- cargadores de modelos 3D (r128 legacy) -->
+  <script src="libs/GLTFLoader.js"></script>
+  <script src="libs/OBJLoader.js"></script>
   <script>
   (function(){
   "use strict";
@@ -147,6 +161,7 @@
   const WORLD = 145;            // límite del mapa (original: 149)
   const EYE = 1.7;
   const PLAYER_R = 0.45;
+  const START = { x:-131, z:34 };   // spawn = FPSStartPosition original (0,240) reescalado
   const NUM_TREES = 2800;
   const NUM_BUSHES = 2400;
 
@@ -159,13 +174,13 @@
     scared: 0,                 // frames de "susto" tras verlo (corres más)
     cansee: false, justsaw: false, drain: 0,
     caught: false, lost: false, won: false,
-    maxrange: 100, minrange: 80,
+    maxrange: 55, minrange: 34,   // más cerca que el original (100/80) → Slender más presente
     // linterna
     battery: 1, torchOn: false, torchdying: false,
     // Slender
     makejump: 0, mightport: 0, chasing: false, finaldelay: 0, maxdeviation: 4,
     // varios
-    flicker: 0, stepcd: 120, laststep: 0, bob: 0, moving: false,
+    flicker: 0, stepcd: 120, laststep: 0, bob: 0, moving: false, ambTimer: 200,
     targetFog: 0.075, fogDensity: 0.075,
     zoom: 60,
     heartTimer: 0,
@@ -330,6 +345,23 @@
 
   // ===================== Materiales PBR reales (texturas CC0 de ambientCG) =====================
   const texLoader = new THREE.TextureLoader();
+
+  // ===================== Pantalla de carga (texturas + modelos + audio) =====================
+  let progAssets=0, progAudio=0, assetsDone=false, audioDone=false, loadDone=false;
+  function updateLoadBar(){
+    const pct=Math.min(100, Math.round((progAssets*0.7 + progAudio*0.3)*100));
+    const b=document.getElementById('loadBar'); if(b) b.style.width=pct+'%';
+    const t=document.getElementById('loadPct'); if(t) t.textContent='Cargando el bosque… '+pct+'%';
+  }
+  function checkLoaded(){
+    if(loadDone || !assetsDone || !audioDone) return; loadDone=true;
+    progAssets=1; progAudio=1; updateLoadBar();
+    const ls=document.getElementById('loadingScreen'); if(ls) ls.style.display='none';
+  }
+  THREE.DefaultLoadingManager.onProgress=(u,l,t)=>{ progAssets=l/Math.max(t,1); updateLoadBar(); };
+  THREE.DefaultLoadingManager.onLoad=()=>{ assetsDone=true; checkLoaded(); };
+  // fallback: nunca quedarse colgado (sin items o error)
+  setTimeout(()=>{ if(!assetsDone){assetsDone=true;} if(!audioDone){audioDone=true;} checkLoaded(); }, 15000);
   function pbrMat(name, rx, ry, opts){
     opts = opts || {};
     const col = texLoader.load('assets/'+name+'_color.jpg');
@@ -365,25 +397,84 @@
   // Cada obstáculo = círculo en el plano XZ {x,z,r}
   const blockers = [];
 
-  // --- Árboles: pino por capas (tronco + 3 conos), instanciado ---
-  const trunkGeo = new THREE.CylinderGeometry(0.14, 0.34, 5.4, 8);
-  const trunkMat = pbrMat('bark', 1.4, 3, {roughness:0.95});
-  const foliageLoGeo = new THREE.ConeGeometry(2.2, 3.0, 8);
-  const foliageMdGeo = new THREE.ConeGeometry(1.75, 2.8, 8);
-  const foliageHiGeo = new THREE.ConeGeometry(1.2, 2.6, 8);
-  const foliageMat = new THREE.MeshLambertMaterial({ color:0xffffff });  // color real vía instanceColor
-  const trunks    = new THREE.InstancedMesh(trunkGeo, trunkMat, NUM_TREES);
-  const foliageLo = new THREE.InstancedMesh(foliageLoGeo, foliageMat, NUM_TREES);
-  const foliageMd = new THREE.InstancedMesh(foliageMdGeo, foliageMat, NUM_TREES);
-  const foliageHi = new THREE.InstancedMesh(foliageHiGeo, foliageMat, NUM_TREES);
-  // los árboles NO proyectan sombra (para poder tener cientos); sí la reciben
-  [trunks, foliageLo, foliageMd, foliageHi].forEach(m=>{ m.castShadow=false; m.receiveShadow=false; scene.add(m); });
+  // --- Bosque, maleza y rocas: modelos 3D CC0 (Quaternius, dominio público) instanciados ---
+  const NUM_ROCKS = 220;
+  const gltfLoader = new THREE.GLTFLoader();
+  const treePlacements = [];   // {x,z,ry,s,type}
+  const bushPlacements = [];   // {x,z,ry,s}
+  const rockPlacements = [];   // {x,z,ry,s}
+  // Carga un GLB e instancia cada malla-variante según `placements`. Normaliza cada
+  // variante: centrada en XZ, base en y=0, altura = opts.targetH (× factor por instancia).
+  function instanceGLB(url, placements, opts){
+    if (!placements.length || !THREE.GLTFLoader) return;
+    opts = opts || {};
+    gltfLoader.load(url, (gltf)=>{
+      gltf.scene.updateMatrixWorld(true);
+      const variants=[];
+      gltf.scene.traverse(o=>{ if(o.isMesh && o.geometry){
+        const geo=o.geometry.clone(); geo.applyMatrix4(o.matrixWorld);
+        geo.computeBoundingBox(); const bb=geo.boundingBox;
+        geo.translate(-(bb.min.x+bb.max.x)/2, -bb.min.y, -(bb.min.z+bb.max.z)/2);  // centrar XZ, base y=0
+        geo.computeBoundingBox();
+        // recorte alpha (NO blending) => hojas sólidas, sin verse a través desde lejos
+        const mat=o.material; if(mat){ mat.transparent=false; mat.alphaTest=0.5; mat.depthWrite=true;
+          mat.side=THREE.DoubleSide; if(opts.tint) mat.color.setHex(opts.tint); }
+        variants.push({ geo, h:(geo.boundingBox.max.y||1), mat });
+      }});
+      if(!variants.length) return;
+      const buckets=variants.map(()=>[]);
+      for(let i=0;i<placements.length;i++) buckets[i%variants.length].push(placements[i]);
+      const d=new THREE.Object3D();
+      variants.forEach((v,vi)=>{
+        const list=buckets[vi]; if(!list.length) return;
+        const base = opts.targetH ? opts.targetH/v.h : 1;
+        const inst=new THREE.InstancedMesh(v.geo, v.mat, list.length);
+        inst.castShadow=!!opts.castShadow; inst.receiveShadow=true; inst.frustumCulled=false;
+        for(let k=0;k<list.length;k++){ const p=list[k];
+          d.position.set(p.x, 0, p.z); d.rotation.set(0, p.ry||0, 0); d.scale.setScalar(base*(p.s||1));
+          d.updateMatrix(); inst.setMatrixAt(k, d.matrix);
+        }
+        inst.instanceMatrix.needsUpdate=true; scene.add(inst);
+      });
+    }, undefined, ()=>{ console.warn('GLB no cargado:', url); });
+  }
 
-  // --- Arbustos / maleza (instanciado, decorativo) ---
-  const bushGeo = new THREE.IcosahedronGeometry(1, 0);
-  const bushMat = new THREE.MeshLambertMaterial({ color:0xffffff });
-  const bushes = new THREE.InstancedMesh(bushGeo, bushMat, NUM_BUSHES);
-  bushes.castShadow=false; bushes.receiveShadow=false; scene.add(bushes);
+  // --- Árboles billboard: coníferas fotográficas realistas CC0 (OpenGameArt), recorte alpha ---
+  // Planos cruzados (2 quads perpendiculares) con las UV mapeadas a una columna del atlas.
+  function crossPlaneGeo(u0,u1){
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([
+      -0.5,0,0, 0.5,0,0, 0.5,1,0, -0.5,1,0,      // quad A (en XY)
+       0,0,-0.5, 0,0,0.5, 0,1,0.5, 0,1,-0.5], 3)); // quad B (en ZY)
+    g.setAttribute('uv', new THREE.Float32BufferAttribute([u0,0,u1,0,u1,1,u0,1, u0,0,u1,0,u1,1,u0,1], 2));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute([0,0,1,0,0,1,0,0,1,0,0,1, 1,0,0,1,0,0,1,0,0,1,0,0], 3));
+    g.setIndex([0,1,2,0,2,3, 4,5,6,4,6,7]);
+    return g;
+  }
+  function billboardTrees(colorURL, normalURL, ncols, placements, baseH, tint, widthRatio){
+    if(!placements.length) return;
+    const col=texLoader.load(colorURL); col.encoding=THREE.sRGBEncoding;
+    const opts={ map:col, color:(tint||0xffffff), alphaTest:0.5, transparent:false,
+      side:THREE.DoubleSide, roughness:0.95, metalness:0 };
+    if(normalURL) opts.normalMap=texLoader.load(normalURL);
+    const mat=new THREE.MeshStandardMaterial(opts);
+    if(normalURL) mat.normalScale.set(0.6,0.6);
+    const wr = widthRatio||0.5;
+    const buckets=Array.from({length:ncols},()=>[]);
+    for(let i=0;i<placements.length;i++) buckets[i%ncols].push(placements[i]);
+    const d=new THREE.Object3D();
+    for(let c=0;c<ncols;c++){
+      const list=buckets[c]; if(!list.length) continue;
+      const inst=new THREE.InstancedMesh(crossPlaneGeo(c/ncols,(c+1)/ncols), mat, list.length);
+      inst.castShadow=false; inst.receiveShadow=false; inst.frustumCulled=false;
+      for(let k=0;k<list.length;k++){ const p=list[k];
+        const H=baseH*(p.s||1), W=H*wr;
+        d.position.set(p.x,0,p.z); d.rotation.set(0,p.ry||0,0); d.scale.set(W,H,W);
+        d.updateMatrix(); inst.setMatrixAt(k,d.matrix);
+      }
+      inst.instanceMatrix.needsUpdate=true; scene.add(inst);
+    }
+  }
 
   // ===================== Estructuras "landmark" (como el original) =====================
   // Guardamos también un punto de anclaje para una página.
@@ -421,8 +512,8 @@
     else blockers.push({x,z,r});
   }
 
-  // 1. Gran árbol
-  struct(40,-55, 1.7, 0, (g,mount)=>{
+  // 1. "Tree" (árbol grande)  — mapa original (327,153)
+  struct(130,-36, 1.7, 0, (g,mount)=>{
     g.add(cyl(0.75,1.4, 9, matWood, 0,4.5,0, 12));
     g.add(cyl(1.4,1.9, 1.3, matWood, 0,0.65,0, 12));
     const b1=box(0.3,4.5,0.3,matWood, 1.4,7,0.2); b1.rotation.z=0.5; g.add(b1);
@@ -432,8 +523,8 @@
     mount(0, 1.7, 1.12, 0);                     // clavada en el tronco
   });
 
-  // 2. Camioneta abandonada
-  struct(-62,30, 3.3, 0.6, (g,mount)=>{
+  // 2. "Single Trucker" (camioneta)  — mapa original (237,116)
+  struct(58,-66, 3.3, 0.6, (g,mount)=>{
     g.add(box(6,0.5,2.4, matRust, 0,1.0,0));
     g.add(box(2.0,1.4,2.4, matRust, -2.0,1.95,0));
     g.add(box(1.5,0.75,2.42, matDark, -2.0,2.25,0));
@@ -445,8 +536,8 @@
     mount(0.8, 1.5, 1.26, 0);                   // pegada al lateral de la caja
   }, [3.0,1.25]);
 
-  // 3. Baños de ladrillo
-  struct(20,80, 4.6, 0, (g,mount)=>{
+  // 3. "Multiple bathrooms" (baños)  — mapa original (225,199)
+  struct(49,1, 4.6, 0, (g,mount)=>{
     g.add(box(8,3.4,5, matBrick, 0,1.7,0));
     g.add(box(8.6,0.4,5.6, matMetal, 0,3.6,0));
     g.add(box(1.6,2.5,0.3, matDark, -2,1.25,2.55));
@@ -454,16 +545,16 @@
     mount(0, 1.85, 2.53, 0);                    // en el muro, entre las puertas
   }, [4.0,2.5]);
 
-  // 4. Túnel de hormigón
-  struct(75,55, 3.0, 0, (g,mount)=>{
+  // 4. "Tunnel" (túnel)  — mapa original (159,113)
+  struct(-4,-68, 3.0, 0, (g,mount)=>{
     const t=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.6,9,20,1,true), matRock);
     t.rotation.z=Math.PI/2; t.position.y=2.6; g.add(t);
     [-4.5,4.5].forEach(zx=>{ const rr=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.28,10,20), matRock); rr.rotation.y=Math.PI/2; rr.position.set(zx,2.6,0); g.add(rr); });
     mount(0, 1.5, 2.34, 0);                     // en la pared curva del tubo
   });
 
-  // 5. Silo / tanque
-  struct(-80,-60, 3.9, 0, (g,mount)=>{
+  // 5. "Silo"  — mapa original (127,307)
+  struct(-30,87, 3.9, 0, (g,mount)=>{
     g.add(cyl(3.6,3.6,11, matMetal, 0,5.5,0, 24));
     g.add(cyl(0.05,3.8,2.2, matMetal, 0,12,0, 24));
     [2,5,8].forEach(by=>{ const rr=new THREE.Mesh(new THREE.TorusGeometry(3.63,0.12,8,26), matMetal); rr.rotation.x=Math.PI/2; rr.position.y=by; g.add(rr); });
@@ -471,8 +562,8 @@
     mount(0, 1.7, 3.62, 0);                     // pegada al depósito
   });
 
-  // 6. Rocas / peñascos
-  struct(-30,-95, 2.7, 0, (g,mount)=>{
+  // 6. "Large Rocks" (rockBlobSix)  — mapa original (86,225)
+  struct(-62,22, 2.7, 0, (g,mount)=>{
     for(let i=0;i<7;i++){ const r=1.2+Math.random()*2.0;
       const m=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0), matRock);
       m.position.set((Math.random()-0.5)*5, r*0.55, (Math.random()-0.5)*5);
@@ -480,8 +571,8 @@
     mount(0.3, 1.3, 1.85, 0);                   // apoyada en una roca
   });
 
-  // 7. Bidones de combustible sobre palet
-  struct(90,-25, 2.4, 0, (g,mount)=>{
+  // 7. "Tanks" (bidones)  — mapa original (168,198)
+  struct(3,0, 2.4, 0, (g,mount)=>{
     g.add(box(4,0.28,4, matWood, 0,0.14,0));
     const red=new THREE.MeshLambertMaterial({color:0x6a2a20});
     const spots=[[-1,-1,matRust],[1,-1,red],[-1,1,red],[1,1,matRust],[0,0,matRust]];
@@ -490,8 +581,8 @@
     mount(0, 1.4, 1.72, 0);                     // pegada a un bidón
   });
 
-  // 8. Verja de madera con la "X"
-  struct(-100,60, 2.2, 0, (g,mount)=>{
+  // 8. "Cross walls" (muros en X)  — mapa original (77,89)
+  struct(-70,-87, 2.2, 0, (g,mount)=>{
     g.add(box(0.3,3,0.3, matWood, -2,1.5,0));
     g.add(box(0.3,3,0.3, matWood,  2,1.5,0));
     g.add(box(4.3,0.25,0.22, matWood, 0,2.5,0));
@@ -500,6 +591,23 @@
     const p2=box(0.2,4.2,0.2, matWood, 0,1.75,0); p2.rotation.z=-0.72; g.add(p2);
     mount(0, 1.75, 0.15, 0);                    // sobre la verja
   }, [2.2,0.25]);
+
+  // 9. "Scary Tree" (CreepyDeadTree)  — mapa original (280,304)
+  struct(93,85, 2.0, 0, (g,mount)=>{
+    g.add(cyl(0.55,1.3, 11, matWood, 0,5.5,0, 10));
+    g.add(cyl(1.3,1.8, 1.2, matWood, 0,0.6,0, 10));
+    [[0.5,7,0.3,3.5,0.6],[-0.4,8,-0.5,3,-0.7],[0.35,9,0.6,2.6,0.5],[-0.5,9.6,0.2,2.4,-0.55],[0.2,10.3,-0.4,2,0.85]]
+      .forEach(b=>{ const m=box(0.22,b[3],0.22, matWood, b[0],b[1],b[2]); m.rotation.z=b[4]; g.add(m); });
+    mount(0, 1.6, 1.05, 0);                     // clavada en el tronco muerto
+  });
+
+  // 10. "Cutted Woods" (círculo de tocones cortados)  — mapa original (309,241)
+  struct(116,34, 3.8, 0, (g,mount)=>{
+    for(let i=0;i<8;i++){ const a=(i/8)*Math.PI*2, h=1.1+Math.random()*0.6;
+      const st=cyl(0.5,0.6, h, matWood, Math.cos(a)*3, h/2, Math.sin(a)*3, 10); g.add(st);
+      g.add(cyl(0.52,0.52,0.05, matDark, Math.cos(a)*3, h+0.02, Math.sin(a)*3, 10)); }  // corte oscuro arriba
+    mount(2.6, 1.0, 1.5, 0);                     // página apoyada en un tocón
+  });
 
   // Valla perimetral (referencia; la niebla y los árboles la ocultan casi siempre)
   [[0,WORLD,WORLD*2,0.5],[0,-WORLD,WORLD*2,0.5],[WORLD,0,0.5,WORLD*2],[-WORLD,0,0.5,WORLD*2]]
@@ -519,155 +627,164 @@
   while (placed<NUM_TREES && guard<NUM_TREES*30){
     guard++;
     const x=(Math.random()*2-1)*(WORLD-5), z=(Math.random()*2-1)*(WORLD-5);
-    if (x*x+z*z < 64) continue;                       // deja libre el inicio (8 m)
+    if ((x-START.x)*(x-START.x)+(z-START.z)*(z-START.z) < 100) continue;   // libre alrededor del START
     let bad=false;
     for (const b of structBlockers){ if (Math.hypot(x-b.x,z-b.z) < b.r+3){ bad=true; break; } }
     if (bad || tClose(x,z)) continue;
     const s=0.9+Math.random()*1.0, ry=Math.random()*6.28;
-    dummy.rotation.set(0,ry,0);
-    dummy.position.set(x,2.7*s,z); dummy.scale.set(s,s,s);        dummy.updateMatrix(); trunks.setMatrixAt(placed,dummy.matrix);
-    dummy.position.set(x,4.7*s,z); dummy.scale.set(s,s,s);        dummy.updateMatrix(); foliageLo.setMatrixAt(placed,dummy.matrix);
-    dummy.position.set(x,6.0*s,z); dummy.scale.set(s*0.9,s,s*0.9); dummy.updateMatrix(); foliageMd.setMatrixAt(placed,dummy.matrix);
-    dummy.position.set(x,7.1*s,z); dummy.scale.set(s*0.78,s,s*0.78); dummy.updateMatrix(); foliageHi.setMatrixAt(placed,dummy.matrix);
-    const tint=0.72+Math.random()*0.55; _c.setRGB(0.16*tint,0.30*tint,0.13*tint);
-    foliageLo.setColorAt(placed,_c); foliageMd.setColorAt(placed,_c); foliageHi.setColorAt(placed,_c);
-    blockers.push({x,z,r:0.35*s});
+    treePlacements.push({ x, z, ry, s, type:(Math.random()<0.4?'dead':'pine') });
+    blockers.push({x,z,r:0.5*s});
     const k=tkey(x,z); let arr=tgrid.get(k); if(!arr){arr=[];tgrid.set(k,arr);} arr.push([x,z]);
     placed++;
   }
-  [trunks,foliageLo,foliageMd,foliageHi].forEach(m=>{ m.count=placed; m.instanceMatrix.needsUpdate=true; });
-  [foliageLo,foliageMd,foliageHi].forEach(m=>{ if(m.instanceColor) m.instanceColor.needsUpdate=true; });
 
   // --- Arbustos / maleza (rellena el suelo, ayuda a esconder a Slender) ---
   let bplaced=0, bguard=0;
   while (bplaced<NUM_BUSHES && bguard<NUM_BUSHES*20){
     bguard++;
     const x=(Math.random()*2-1)*(WORLD-4), z=(Math.random()*2-1)*(WORLD-4);
-    if (x*x+z*z < 36) continue;
+    if ((x-START.x)*(x-START.x)+(z-START.z)*(z-START.z) < 49) continue;
     let bad=false;
     for (const b of structBlockers){ if (Math.hypot(x-b.x,z-b.z) < b.r+1.5){ bad=true; break; } }
     if (bad) continue;
-    const sx=0.5+Math.random()*1.2, sy=0.35+Math.random()*0.6, sz=0.5+Math.random()*1.2;
-    dummy.rotation.set(0,Math.random()*6.28,0);
-    dummy.position.set(x, sy*0.5, z); dummy.scale.set(sx,sy,sz); dummy.updateMatrix();
-    bushes.setMatrixAt(bplaced, dummy.matrix);
-    const tint=0.6+Math.random()*0.5; _c.setRGB(0.12*tint,0.22*tint,0.10*tint);
-    bushes.setColorAt(bplaced,_c);
+    bushPlacements.push({ x, z, ry:Math.random()*6.28, s:0.6+Math.random()*0.9 });
     bplaced++;
   }
-  bushes.count=bplaced; bushes.instanceMatrix.needsUpdate=true;
-  if (bushes.instanceColor) bushes.instanceColor.needsUpdate=true;
-
-  let grassTime = null;   // uniform de tiempo para el viento del césped
-  // ===================== Césped (instanced, ligero) — se revela en el haz de la linterna =====
+  // --- Rocas dispersas (decoración) ---
+  let rpl=0, rgu=0;
+  while(rpl<NUM_ROCKS && rgu<NUM_ROCKS*20){
+    rgu++;
+    const x=(Math.random()*2-1)*(WORLD-4), z=(Math.random()*2-1)*(WORLD-4);
+    if((x-START.x)*(x-START.x)+(z-START.z)*(z-START.z)<64) continue;
+    let bad=false; for(const b of structBlockers){ if(Math.hypot(x-b.x,z-b.z)<b.r+1){ bad=true; break; } }
+    if(bad) continue;
+    rockPlacements.push({ x, z, ry:Math.random()*6.28, s:0.5+Math.random()*1.7 });
+    rpl++;
+  }
+  // --- Instanciar los modelos CC0 (asíncrono; el mundo se rellena al cargar) ---
+  // Troncos 3D gruesos (secuoya) + copa 3D de conos de follaje encima — SIN billboards
   (function(){
-    // textura: matojo de briznas verdes sobre transparente (alphaTest, sin ordenar transparencias)
-    const c=document.createElement('canvas'); c.width=c.height=128;
-    const gx=c.getContext('2d');
-    for(let i=0;i<11;i++){
-      const bx=14+Math.random()*100, w=3+Math.random()*4, h=52+Math.random()*64;
-      const topx=bx+(Math.random()-0.5)*34, topy=128-h;
-      const grd=gx.createLinearGradient(0,128,0,topy);
-      grd.addColorStop(0,'#123009'); grd.addColorStop(1,'#4f9331');
-      gx.fillStyle=grd; gx.beginPath(); gx.moveTo(bx-w,128);
-      gx.quadraticCurveTo((bx+topx)/2-w,(128+topy)/2,topx,topy);
-      gx.quadraticCurveTo((bx+topx)/2+w,(128+topy)/2,bx+w,128);
-      gx.closePath(); gx.fill();
-    }
-    const gtex=new THREE.CanvasTexture(c); gtex.encoding=THREE.sRGBEncoding;
-    // geometría: 2 quads cruzados, base en y=0, normales hacia arriba (captan bien la linterna)
-    const ggeo=new THREE.BufferGeometry();
-    ggeo.setAttribute('position', new THREE.Float32BufferAttribute([
-      -0.5,0,0, 0.5,0,0, 0.5,1,0, -0.5,1,0,
-       0,0,-0.5, 0,0,0.5, 0,1,0.5, 0,1,-0.5], 3));
-    ggeo.setAttribute('uv', new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,1, 0,0,1,0,1,1,0,1], 2));
-    ggeo.setAttribute('normal', new THREE.Float32BufferAttribute([
-      0,1,0, 0,1,0, 0,1,0, 0,1,0,  0,1,0, 0,1,0, 0,1,0, 0,1,0], 3));
-    ggeo.setIndex([0,1,2, 0,2,3,  4,5,6, 4,6,7]);
-    const gmat=new THREE.MeshPhongMaterial({ map:gtex, alphaTest:0.45, side:THREE.DoubleSide,
-      specular:0x000000, shininess:0 });
-    // viento: la punta (position.y=1) se mece; la base (y=0) queda plantada. Fase por instancia.
-    gmat.onBeforeCompile = (shader)=>{
-      shader.uniforms.uWind = { value: 0 };
-      grassTime = shader.uniforms.uWind;
-      shader.vertexShader = 'uniform float uWind;\n' + shader.vertexShader.replace(
-        '#include <begin_vertex>',
-        '#include <begin_vertex>\n'+
-        '  vec3 ipos = instanceMatrix[3].xyz;\n'+
-        '  float ph = ipos.x*0.25 + ipos.z*0.25;\n'+
-        '  float sway = sin(uWind*1.4 + ph)*0.11 + sin(uWind*2.6 + ph*1.7)*0.045;\n'+
-        '  transformed.x += sway * position.y;\n'+
-        '  transformed.z += cos(uWind*1.1 + ph)*0.08 * position.y;\n'
-      );
-    };
-    const NUM_GRASS=15000;
-    const grass=new THREE.InstancedMesh(ggeo, gmat, NUM_GRASS);
-    grass.castShadow=false; grass.receiveShadow=false; grass.frustumCulled=false;
-    let gpl=0, ggu=0;
+    const d=new THREE.Object3D();
+    // TRONCOS (todos los árboles)
+    const tg=new THREE.CylinderGeometry(0.34, 0.62, 7.5, 9); tg.translate(0,3.75,0);   // base en y=0
+    const trunk=new THREE.InstancedMesh(tg, pbrMat('bark',1,3.2,{roughness:0.95,color:0x7a5442}), treePlacements.length);
+    trunk.castShadow=false; trunk.receiveShadow=true; trunk.frustumCulled=false;
+    treePlacements.forEach((p,k)=>{ const s=p.s||1; d.position.set(p.x,0,p.z); d.rotation.set(0,p.ry||0,0);
+      d.scale.set(s,s*1.15,s); d.updateMatrix(); trunk.setMatrixAt(k,d.matrix); });
+    trunk.instanceMatrix.needsUpdate=true; scene.add(trunk);
+    // COPAS 3D: 3 capas de cono en lo alto de CADA árbol (vivos verdes, muertos parduzcos)
+    const coneMat=new THREE.MeshStandardMaterial({ color:0xffffff, roughness:1, metalness:0, flatShading:true });
+    const geos=[new THREE.ConeGeometry(3.0,4.6,9), new THREE.ConeGeometry(2.3,4.0,9), new THREE.ConeGeometry(1.5,3.4,9)];
+    const cY=[5.4,7.4,9.1]; const _cc=new THREE.Color();
+    geos.forEach((g,i)=>{ const c=new THREE.InstancedMesh(g, coneMat, treePlacements.length);
+      c.castShadow=false; c.receiveShadow=false; c.frustumCulled=false;
+      treePlacements.forEach((p,k)=>{ const s=p.s||1; d.position.set(p.x, cY[i]*s*1.15, p.z); d.rotation.set(0,p.ry||0,0);
+        d.scale.set(s,s,s); d.updateMatrix(); c.setMatrixAt(k,d.matrix);
+        const t=0.7+Math.random()*0.45;
+        if(p.type==='dead') _cc.setRGB(0.11*t,0.10*t,0.055*t); else _cc.setRGB(0.08*t,0.15*t,0.06*t);
+        c.setColorAt(k,_cc); });
+      c.instanceMatrix.needsUpdate=true; if(c.instanceColor)c.instanceColor.needsUpdate=true; scene.add(c); });
+  })();
+  billboardTrees('assets/foliage/ferns.png', null, 6, bushPlacements, 1.15, 0x6a7458, 0.85); // helechos (suelo)
+  instanceGLB('assets/models/rock.glb', rockPlacements, {targetH:0.5, castShadow:true});   // rocas pequeñas
+
+  let grassTime = null;   // (el viento del césped billboard se retiró; updateVisual lo ignora si es null)
+  // ===================== Césped: modelo 3D CC0 (Quaternius) instanciado =====================
+  (function(){
+    const grassPl=[]; let gpl=0, ggu=0; const NUM_GRASS=9000;
     while(gpl<NUM_GRASS && ggu<NUM_GRASS*12){
       ggu++;
       const x=(Math.random()*2-1)*(WORLD-4), z=(Math.random()*2-1)*(WORLD-4);
       let bad=false;
       for(const b of structBlockers){ if(Math.hypot(x-b.x,z-b.z) < b.r+1.2){ bad=true; break; } }
       if(bad) continue;
-      const s=0.45+Math.random()*0.7, wd=0.7+Math.random()*0.7;
-      dummy.position.set(x,0,z); dummy.rotation.set(0,Math.random()*6.28,0);
-      dummy.scale.set(wd, s, wd); dummy.updateMatrix();
-      grass.setMatrixAt(gpl, dummy.matrix);
-      const v=0.72+Math.random()*0.5; _c.setRGB(v*0.92, v, v*0.85);
-      grass.setColorAt(gpl, _c);
-      gpl++;
+      grassPl.push({ x, z, ry:Math.random()*6.28, s:0.6+Math.random()*0.8 }); gpl++;
     }
-    grass.count=gpl; grass.instanceMatrix.needsUpdate=true;
-    if(grass.instanceColor) grass.instanceColor.needsUpdate=true;
-    scene.add(grass);
+    instanceGLB('assets/models/grass.glb', grassPl, {targetH:0.5, tint:0x8aa86a});
   })();
 
   // ===================== Slender =====================
   const slender = new THREE.Group();
   let slHead=null; const slArms=[]; const slTentacles=[];
+  const slProc = new THREE.Group();       // modelo procedural (se oculta si carga el .obj)
+  slender.add(slProc);
   (function(){
-    const suit  = new THREE.MeshStandardMaterial({ color:0x070708, roughness:0.62, metalness:0.0 });
-    const shirt = new THREE.MeshStandardMaterial({ color:0xb9b9bd, roughness:0.7 });
-    const skin  = new THREE.MeshStandardMaterial({ color:0xe9e5db, roughness:0.78, emissive:0x24211c, emissiveIntensity:0.60 });
-    // piernas largas
-    const legGeo=new THREE.CylinderGeometry(0.085,0.07,1.5,8);
-    const ll=new THREE.Mesh(legGeo,suit); ll.position.set(-0.14,0.75,0); slender.add(ll);
-    const rl=new THREE.Mesh(legGeo,suit); rl.position.set( 0.14,0.75,0); slender.add(rl);
-    // torso afilado + camisa + corbata
-    const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.30,1.5,10), suit); torso.position.y=2.15; slender.add(torso);
-    const chest=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,0.9,8), shirt); chest.position.set(0,2.2,0.11); slender.add(chest);
-    const tie  =new THREE.Mesh(new THREE.BoxGeometry(0.07,0.6,0.04), new THREE.MeshStandardMaterial({color:0x0e0e12,roughness:0.6})); tie.position.set(0,2.15,0.22); slender.add(tie);
-    // hombros, cuello y cabeza pálida alargada
-    const shoulders=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.24,0.22,10), suit); shoulders.position.y=2.86; slender.add(shoulders);
-    const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.22,8), skin); neck.position.y=3.02; slender.add(neck);
-    slHead=new THREE.Mesh(new THREE.SphereGeometry(0.24,20,20), skin);
-    slHead.scale.set(0.92,1.45,0.92); slHead.position.y=3.34; slender.add(slHead);
-    // brazos larguísimos (grupos-pivote en el hombro para balancearse)
+    const suit  = new THREE.MeshStandardMaterial({ color:0x040405, roughness:0.5, metalness:0.0 });
+    const shirt = new THREE.MeshStandardMaterial({ color:0x0e0e13, roughness:0.7 });
+    // piel pálida enfermiza, con un tenue brillo propio: la cara flotante en la oscuridad
+    const skin  = new THREE.MeshStandardMaterial({ color:0xeae6dc, roughness:0.9, emissive:0x1c1a15, emissiveIntensity:0.5 });
+    slender.userData.skinMat = skin;   // ref. para encender la cara en el jumpscare
+    // ~3,5 m, antinaturalmente delgado
+    // piernas largas y finas
+    const legGeo=new THREE.CylinderGeometry(0.07,0.05,1.85,8);
+    const ll=new THREE.Mesh(legGeo,suit); ll.position.set(-0.12,0.92,0); ll.rotation.z=0.02; slProc.add(ll);
+    const rl=new THREE.Mesh(legGeo,suit); rl.position.set( 0.12,0.92,0); rl.rotation.z=-0.02; slProc.add(rl);
+    // torso afilado: hombros anchos -> cintura fina (cono invertido)
+    const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.245,0.14,1.75,12), suit); torso.position.y=2.6; slProc.add(torso);
+    const chest=new THREE.Mesh(new THREE.CylinderGeometry(0.10,0.15,1.1,8), shirt); chest.position.set(0,2.55,0.11); slProc.add(chest);
+    const tie  =new THREE.Mesh(new THREE.BoxGeometry(0.06,0.7,0.03), new THREE.MeshStandardMaterial({color:0x08080b,roughness:0.6})); tie.position.set(0,2.5,0.2); slProc.add(tie);
+    // hombros afilados (caja fina), cuello largo, cabeza ovoide pálida ladeada
+    const shoulders=new THREE.Mesh(new THREE.BoxGeometry(0.74,0.14,0.26), suit); shoulders.position.y=3.42; slProc.add(shoulders);
+    const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.07,0.34,8), skin); neck.position.y=3.6; slProc.add(neck);
+    slHead=new THREE.Mesh(new THREE.SphereGeometry(0.22,28,28), skin);
+    slHead.scale.set(0.86,1.5,0.9); slHead.position.y=3.9; slHead.rotation.z=0.07; slProc.add(slHead);
+    // brazos larguísimos, cuelgan más allá de las rodillas; dedos alargados
     function arm(side){
-      const grp=new THREE.Group(); grp.position.set(0.28*side,2.82,0);
-      const upper=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.05,1.2,7), suit); upper.position.set(0,-0.6,0); grp.add(upper);
-      const fore =new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.035,1.2,7), suit); fore.position.set(0,-1.75,0); grp.add(fore);
-      const hand=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8), skin); hand.position.y=-2.4; hand.scale.set(1,1.7,1); grp.add(hand);
-      grp.rotation.z = -0.08*side;
-      slender.add(grp); slArms.push(grp);
+      const grp=new THREE.Group(); grp.position.set(0.33*side,3.34,0);
+      const upper=new THREE.Mesh(new THREE.CylinderGeometry(0.048,0.04,1.5,7), suit); upper.position.set(0,-0.72,0); grp.add(upper);
+      const fore =new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.028,1.5,7), suit); fore.position.set(0,-2.15,0); grp.add(fore);
+      const hand=new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.006,0.55,6), skin); hand.position.set(0,-3.05,0); grp.add(hand);
+      grp.rotation.z = -0.05*side;
+      slProc.add(grp); slArms.push(grp);
     }
     arm(-1); arm(1);
-    // tentáculos (ocultos hasta que acecha de cerca / baja la cordura)
-    const tentMat=new THREE.MeshStandardMaterial({color:0x050506, roughness:0.7});
-    for(let i=0;i<6;i++){
-      const pivot=new THREE.Group(); const ang=(i/6)*Math.PI*2;
-      pivot.position.set(Math.cos(ang)*0.14, 2.7, -0.16 + Math.sin(ang)*0.08);
-      const seg=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.11,2.7,6), tentMat);
+    // tentáculos: 8, largos y oscuros, brotando de la espalda; ocultos hasta que acecha / cae la cordura
+    const tentMat=new THREE.MeshStandardMaterial({color:0x020203, roughness:0.8});
+    for(let i=0;i<8;i++){
+      const pivot=new THREE.Group(); const ang=((i/8)-0.5)*Math.PI*1.7;   // abanico hacia atrás
+      pivot.position.set(Math.sin(ang)*0.16, 2.95+Math.random()*0.5, -0.2 - Math.abs(Math.cos(ang))*0.06);
+      const seg=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.1,2.6+Math.random()*1.2,6), tentMat);
       seg.position.y=1.35; pivot.add(seg);
-      pivot.rotation.set(-0.35+Math.random()*0.2, ang, (i%2?0.35:-0.35));
+      pivot.rotation.set(-0.55+Math.random()*0.3, ang, (i%2?0.35:-0.35));
       pivot.scale.setScalar(0.001);
-      slender.add(pivot); slTentacles.push({pivot, phase:Math.random()*6.28, base:pivot.rotation.clone()});
+      slProc.add(pivot); slTentacles.push({pivot, phase:Math.random()*6.28, base:pivot.rotation.clone()});
     }
   })();
   slender.position.set(0,-200,0);   // fuera del mapa hasta empezar
   scene.add(slender);
   const slenderHead = new THREE.Vector3();
+
+  // --- Modelo CC0 de Slender (repromancer, dominio público) con texturas PBR ---
+  let slObjWrap=null;
+  (function(){
+    if (!THREE.OBJLoader) return;
+    const P='assets/models/slender/';
+    const tex=(f,srgb)=>{ const t=texLoader.load(P+f); if(srgb) t.encoding=THREE.sRGBEncoding; return t; };
+    // OJO: color=sRGB; normal/rough/metallic en lineal (como avisa el README del autor)
+    const clothing=new THREE.MeshStandardMaterial({
+      map:tex('slender_clothing_basecolor.jpg',true), normalMap:tex('slender_clothing_normal.jpg'),
+      roughnessMap:tex('slender_clothing_roughness.jpg'), metalnessMap:tex('slender_clothing_metallic.jpg'),
+      metalness:1.0, roughness:1.0 });
+    const skin=new THREE.MeshStandardMaterial({
+      map:tex('slender_skin_basecolor.jpg',true), normalMap:tex('slender_skin_normal.jpg'),
+      roughnessMap:tex('slender_skin_roughness.jpg'), metalnessMap:tex('slender_skin_metallic.jpg'),
+      metalness:1.0, roughness:1.0, emissive:0x0d0c0a, emissiveIntensity:0.3 });  // cara apenas visible en la oscuridad
+    slender.userData.skinMat = skin;   // ref. para encender la cara en el jumpscare
+    new THREE.OBJLoader().load(P+'model.obj', (obj)=>{
+      obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
+        o.material = ((o.name||'').toLowerCase().indexOf('skin')>=0) ? skin : clothing; }});
+      // normalizar: pies en y=0, centrado en XZ, altura ~2.9 m (imponente)
+      const bb=new THREE.Box3().setFromObject(obj); const sz=new THREE.Vector3(); bb.getSize(sz);
+      const scale=2.9/(sz.y||1);
+      const cx=(bb.min.x+bb.max.x)/2, cz=(bb.min.z+bb.max.z)/2;
+      obj.scale.setScalar(scale);
+      obj.position.set(-cx*scale, -bb.min.y*scale, -cz*scale);
+      slObjWrap=new THREE.Group(); slObjWrap.add(obj);   // wrap para poder girarlo si mira al revés
+      slProc.visible=false;                              // oculta el procedural
+      slender.add(slObjWrap);
+      console.log('Slender: modelo CC0 (repromancer) cargado con PBR.');
+    }, undefined, (e)=>{ console.warn('OBJ de Slender no cargado; se usa el procedural.'); });
+  })();
 
   // ===================== Páginas =====================
   const PAGE_MSGS = [
@@ -807,32 +924,53 @@
   })();
 
   // ===================== Audio procedural (WebAudio) =====================
-  let AC=null, master=null, windGain=null, staticGain=null, droneGains=[], drones=[], noiseBuf=null;
-  function initAudio(){
+  let AC=null, master=null, windGain=null, staticGain=null, cricketGain=null, musicGains=[], noiseBuf=null;
+  const AUD={};   // buffers de los sonidos ORIGINALES del juego
+  let loopsStarted=false;
+  // Precarga (durante la pantalla de carga): crea el contexto SUSPENDIDO y decodifica todo.
+  function preloadAudio(){
     if (AC) return;
-    AC = new (window.AudioContext||window.webkitAudioContext)();
-    master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
-    // buffer de ruido blanco reutilizable
+    try { AC = new (window.AudioContext||window.webkitAudioContext)(); }
+    catch(e){ audioDone=true; checkLoaded(); return; }
+    master = AC.createGain(); master.gain.value = 0.9;
+    const limiter = AC.createDynamicsCompressor();
+    limiter.threshold.value=-3; limiter.knee.value=6; limiter.ratio.value=12;
+    limiter.attack.value=0.002; limiter.release.value=0.15;
+    master.connect(limiter); limiter.connect(AC.destination);
     noiseBuf = AC.createBuffer(1, AC.sampleRate*2, AC.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
-    // Viento
-    const w = AC.createBufferSource(); w.buffer=noiseBuf; w.loop=true;
-    const wf = AC.createBiquadFilter(); wf.type='lowpass'; wf.frequency.value=380;
-    windGain = AC.createGain(); windGain.gain.value=0.0;
-    w.connect(wf); wf.connect(windGain); windGain.connect(master); w.start();
-    // Estática (sube con la interferencia visual)
-    const s = AC.createBufferSource(); s.buffer=noiseBuf; s.loop=true;
-    const sf = AC.createBiquadFilter(); sf.type='highpass'; sf.frequency.value=1500;
-    staticGain = AC.createGain(); staticGain.gain.value=0.0;
-    s.connect(sf); sf.connect(staticGain); staticGain.connect(master); s.start();
-    // Drones (capas de "música" que se intensifican con las páginas)
-    const freqs=[41,55,61.7,82];
-    freqs.forEach(f=>{ const o=AC.createOscillator(); o.type='sine'; o.frequency.value=f;
-      const o2=AC.createOscillator(); o2.type='sine'; o2.frequency.value=f*1.005;
-      const g=AC.createGain(); g.gain.value=0; o.connect(g); o2.connect(g); g.connect(master);
-      o.start(); o2.start(); drones.push([o,o2]); droneGains.push(g); });
+    windGain=AC.createGain(); windGain.gain.value=0; windGain.connect(master);
+    staticGain=AC.createGain(); staticGain.gain.value=0; staticGain.connect(master);
+    cricketGain=AC.createGain(); cricketGain.gain.value=0; cricketGain.connect(master);
+    musicGains=[0,1,2,3].map(()=>{ const g=AC.createGain(); g.gain.value=0; g.connect(master); return g; });
+    const files={ sting:'sting.wav', pagegrab:'pagegrab.wav', breath:'breath.wav', flashlight:'flashlight.wav',
+      static_med:'static_med.wav', static_heavy:'static_heavy.wav',
+      music1:'music1.wav',music2:'music2.wav',music3:'music3.wav',music4:'music4.wav',
+      cricket:'cricket.wav',owl:'owl.wav',
+      step1:'step1.wav',step2:'step2.wav',step3:'step3.wav',step4:'step4.wav',
+      step5:'step5.wav',step6:'step6.wav',step7:'step7.wav',step8:'step8.wav' };
+    const loadOne=(k,f)=> fetch('assets/audio/'+f).then(r=>r.arrayBuffer()).then(b=>AC.decodeAudioData(b)).then(buf=>{AUD[k]=buf;}).catch(()=>{});
+    const keys=Object.keys(files); let done=0;
+    Promise.all(keys.map(k=> loadOne(k,files[k]).then(()=>{ done++; progAudio=done/keys.length; updateLoadBar(); })
+    )).then(()=>{ audioDone=true; checkLoaded(); });
+    // wind.wav (11 MB) aparte: NO bloquea la carga; su bucle arranca cuando llega
+    loadOne('wind','wind.wav').then(()=>{ if(loopsStarted && windGain) loopSrc('wind', windGain); });
   }
+  // Arranca los bucles (viento/estática/música) al pulsar EMPEZAR (con el contexto ya reanudado).
+  function startAudioLoops(){
+    if (loopsStarted || !AC) return; loopsStarted=true;
+    loopSrc('wind', windGain); loopSrc('static_med', staticGain); loopSrc('cricket', cricketGain);
+    loopSrc('music1',musicGains[0]); loopSrc('music2',musicGains[1]);
+    loopSrc('music3',musicGains[2]); loopSrc('music4',musicGains[3]);
+  }
+  preloadAudio();   // empieza a cargar el audio ya, durante la pantalla de carga
+  function loopSrc(name, gain){ if(!AC||!AUD[name]) return;
+    const s=AC.createBufferSource(); s.buffer=AUD[name]; s.loop=true; s.connect(gain); s.start(); }
+  function playBuf(name, vol){ if(!AC||!AUD[name]) return;
+    const s=AC.createBufferSource(); s.buffer=AUD[name];
+    const g=AC.createGain(); g.gain.value=(vol==null?1:vol);
+    s.connect(g); g.connect(master); s.start(); }
   function noiseBurst(dur, type, freq, q, gain){
     if(!AC) return;
     const s=AC.createBufferSource(); s.buffer=noiseBuf; s.loop=true;
@@ -850,10 +988,9 @@
     g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
     o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+0.05);
   }
-  function stinger(){ // el "susto" al verlo por primera vez
-    if(!AC) return;
-    [155,220,233,311].forEach((f,i)=> tone(f, 0.9, i%2?'sawtooth':'square', 0.14));
-    noiseBurst(0.5,'highpass',2000,1,0.5);
+  function stinger(){ // el susto ORIGINAL: el golpe "dramatic piano" del juego + estática fuerte
+    playBuf('sting', 1.0);
+    playBuf('static_heavy', 0.6);
   }
   function heartbeat(vol){
     tone(58, 0.16, 'sine', 0.5*vol);
@@ -863,7 +1000,7 @@
     noiseBurst(1.4,'lowpass',900,1,0.9);
     [70,74,110,147].forEach(f=>tone(f,1.4,'sawtooth',0.28));
   }
-  function footstep(){ noiseBurst(0.09,'bandpass',260+Math.random()*120,1.2,0.28); }
+  function footstep(){ playBuf('step'+(1+((Math.random()*8)|0)), 0.5); }
 
   // ===================== Utilidades geométricas =====================
   const _v = new THREE.Vector3(), _fwd = new THREE.Vector3();
@@ -963,7 +1100,7 @@
     if (!G.cansee || aggressiveAlways){
       G.mightport = 0;
       G.makejump++;
-      const threshold = Math.max(50, 550 - (G.pages+G.level)*50);
+      const threshold = Math.max(60, 450 - (G.pages+G.level)*45);   // reaparece un poco más seguido
       // no se teletransporta mientras te persigue de cerca, salvo que estés lejos
       if (G.makejump >= threshold && (!G.chasing || (dist>10 && Math.random()<=0.2))){
         G.makejump = 0;
@@ -1075,12 +1212,12 @@
     G.pages++;
     G.fadeoutgui = 0;
     G.toolong = 15000;
-    noiseBurst(0.25,'highpass',3500,0.7,0.35);  // papel
+    playBuf('pagegrab', 0.85);                  // sonido de página original
     showPages();
     if (G.pages < 8){
       G.targetFog = 0.075 + G.pages*0.006;
-      G.maxrange = 100 - (G.pages+G.level)*11;
-      G.minrange = 80 - (G.pages+G.level)*10;
+      G.maxrange = 55 - (G.pages+G.level)*5;
+      G.minrange = 34 - (G.pages+G.level)*3;
     } else {
       G.targetFog = 0.09;
       G.maxrange = 20; G.minrange = 10; G.finaldelay = 150;
@@ -1144,14 +1281,14 @@
       G.toolong--;
       if (G.toolong<=0){ G.toolong=12000;
         if (G.pages+G.level<9){ G.level++;
-          G.maxrange=100-(G.pages+G.level)*11; G.minrange=80-(G.pages+G.level)*10; }
+          G.maxrange=55-(G.pages+G.level)*5; G.minrange=34-(G.pages+G.level)*3; }
       }
     }
 
     // Linterna: batería y parpadeo
     if (G.torchOn){
-      G.battery -= 0.00018;
-      if (G.battery <= 0.05){ G.battery=0; G.torchOn=false; }
+      G.battery -= 0.000018;   // valor original: dura ~15 min 45 s de uso continuo
+      if (G.battery <= 0.15){ G.battery=0; G.torchOn=false; }
       if (G.battery < 0.25 && Math.random()<0.2) G.torchdying=!G.torchdying;
     } else G.torchdying=false;
     const targetIntensity = G.torchOn ? (G.torchdying? Math.max(0,G.battery-0.4)*2.5 : G.battery*2.5) : 0;
@@ -1199,7 +1336,7 @@
     // ---- Estática visual + audio ----
     if (G.flicker>0){ staticAlpha = 1; G.flicker--; }
     else { staticAlpha = Math.min(0.85, Math.max(0, 0.28 - G.sanity/360)); }
-    if (staticGain) staticGain.gain.value = staticAlpha*0.25 + (G.flicker>0?0.15:0);
+    if (staticGain) staticGain.gain.value = staticAlpha*0.5 + (G.flicker>0?0.3:0);
 
     // viñeta ("tentáculos") crece al bajar la cordura
     const vig = G.sanity<80 ? (80-G.sanity)/80 : 0;
@@ -1207,19 +1344,25 @@
 
     // latido del corazón, más rápido con menos cordura
     if (AC){
-      windGain.gain.value = 0.12;
+      windGain.gain.value = 0.22;
+      cricketGain.gain.value = 0.2;            // grillos siempre de fondo (constante)
       G.heartTimer--;
       if (G.heartTimer<=0 && G.sanity<95){
         const f = G.sanity/100;                 // 1 = calmado
         G.heartTimer = Math.round(20 + f*70);   // 0.4s .. 1.8s
-        heartbeat(0.4 + (1-f)*0.9);
+        heartbeat(0.35 + (1-f)*0.8);
       }
-      // capas de drone según páginas
+      // música ORIGINAL del juego (sm_music_1..4) con crossfade, sube con las páginas
       const lvl = G.pages+G.level;
-      for(let i=0;i<droneGains.length;i++){
-        const on = (lvl>i*2) ? (0.06 + (G.won?0.06:0)) : 0;
-        droneGains[i].gain.value += (on - droneGains[i].gain.value)*0.02;
+      const active = lvl<=0 ? -1 : (lvl<3?0 : lvl<5?1 : lvl<7?2 : 3);
+      for(let i=0;i<musicGains.length;i++){
+        const on = (i===active) ? 0.6 : 0;
+        musicGains[i].gain.value += (on - musicGains[i].gain.value)*0.02;
       }
+      // sólo un búho ocasional (nada de aves diurnas de noche)
+      G.ambTimer--;
+      if (G.ambTimer<=0){ G.ambTimer = 900 + ((Math.random()*2000)|0);
+        playBuf('owl', 0.32); }
     }
 
     // Modelo de linterna: balanceo al caminar + brillo de la lente
@@ -1247,6 +1390,7 @@
   }
 
   // ===================== Fin de partida =====================
+  let jumpscareOn = false, jumpLight = null;
   function endGame(type){
     if (G.state==='ending') return;
     G.state='ending';
@@ -1262,14 +1406,25 @@
     const es = document.getElementById('endScreen');
 
     if (type==='dead'){
-      setTimeout(()=>{ fb.style.opacity='1'; }, 500);
+      // JUMPSCARE: la cara sin rostro de Slender llena la pantalla, con estática pesada
+      jumpscareOn = true;
+      slender.position.set(camera.position.x + _fwd.x*0.9, 0, camera.position.z + _fwd.z*0.9);  // muy cerca
+      G.torchOn = true; torch.intensity = 5;
+      // luz puntual dedicada: le ilumina bien la cara, el fondo queda oscuro
+      jumpLight = new THREE.PointLight(0xfff2e6, 6, 5);
+      jumpLight.position.set(camera.position.x, 2.0, camera.position.z); scene.add(jumpLight);
+      const _sm=slender.userData.skinMat; if(_sm){ _sm.emissive.setHex(0xf6f0e6); _sm.emissiveIntensity=1.7; }  // la cara brilla
+      if (flashModel) flashModel.visible=false;
+      if (flashBeam) flashBeam.visible=false;
+      playBuf('static_heavy', 0.95);                             // estática fuerte de muerte
+      setTimeout(()=>{ fb.style.opacity='1'; }, 1600);           // aguanta el susto ~1,6 s
       setTimeout(()=>{
-        staticAlpha=0; sc.style.opacity='0';
+        jumpscareOn=false; if(jumpLight){scene.remove(jumpLight);jumpLight=null;} staticAlpha=0; sc.style.opacity='0';
         document.getElementById('endTitle').textContent='THE TAPE ENDS THERE.';
         document.getElementById('endText').innerHTML='Recogiste <b>'+G.pages+'/8</b> páginas antes de que te encontrara.';
         document.getElementById('restartBtn').textContent='CLIC PARA REINTENTAR';
         es.style.display='flex'; fb.style.opacity='0';
-      }, 2200);
+      }, 2800);
       return;
     }
 
@@ -1336,7 +1491,7 @@
   function toggleTorch(){
     if (G.battery<=0.05 && !G.torchOn) return;
     G.torchOn = !G.torchOn;
-    noiseBurst(0.05,'highpass',3000,1,0.15);
+    playBuf('flashlight', 0.6);
   }
 
   // ===================== Control de estados / pointer lock =====================
@@ -1344,13 +1499,16 @@
 
   function startGame(){
     if (G.state!=='start') return;
-    initAudio();
+    preloadAudio();                          // no-op si ya se precargó en la pantalla de carga
     if (AC && AC.state==='suspended') AC.resume();
+    startAudioLoops();
     document.getElementById('startScreen').style.display='none';
     document.getElementById('crosshair').style.display='block';
     elBattery.style.display='block';
-    camera.position.set(0, EYE, 0);
-    G.curX=0; G.curZ=0; G.prvX=0; G.prvZ=0;   // estado para interpolar el render
+    camera.position.set(START.x, EYE, START.z);              // spawn en el START original
+    G.curX=START.x; G.curZ=START.z; G.prvX=START.x; G.prvZ=START.z;   // estado interpolado
+    G.player_yaw = -Math.PI/2; G.player_pitch = 0;           // mirando al mapa (hacia +x)
+    camera.rotation.set(0, G.player_yaw, 0);
     G.torchOn = true;                 // arranca con la linterna encendida
     G.state='play';
     renderer.domElement.requestPointerLock();
@@ -1383,6 +1541,11 @@
   function updateVisual(dt){
     elapsed += dt;
     if (grassTime) grassTime.value = elapsed;            // avanza el viento del césped
+    if (jumpscareOn){                                    // JUMPSCARE de muerte: cámara clavada en su cara
+      camera.lookAt(slender.position.x, 2.55, slender.position.z);
+      torch.intensity = 5;
+      staticAlpha = 0.26 + Math.abs(Math.sin(elapsed*18))*0.34;   // estática parpadeante sobre la cara
+    }
     if (G.dayReveal) camera.rotation.y += dt*0.13;      // paneo lento del mapa al amanecer
     // nubes a la deriva
     for(const c of clouds){ c.s.position.x += c.speed*dt; if (c.s.position.x>430) c.s.position.x=-430; }
